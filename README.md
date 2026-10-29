@@ -598,6 +598,12 @@ a test.
 
 ## 📚 More documentation
 
+### Windsurf, Cline and Zed
+
+- **Windsurf** — `~/.codeium/windsurf/mcp_config.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
+- **Cline** — `cline_mcp_settings.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
+- **Zed** — `~/.config/zed/settings.json`: `{ "context_servers": { "playwright-e2e": { "command": { "path": "npx", "args": ["-y", "playwright-e2e-mcp"] } } } }`
+
 - [Tool reference](docs/tools.md): every argument, example outputs, edge cases handled
 - [Hosted endpoint](docs/hosted-endpoint.md): the HTTP bridge for ChatGPT and claude.ai connectors
 - [History server](history-server/README.md): shared CI run history with a dashboard, self-hosted
