@@ -507,6 +507,12 @@ browsing and this server for running, diagnosing and fixing the suite. They work
 
 ## More documentation
 
+### Windsurf, Cline and Zed
+
+- **Windsurf** — `~/.codeium/windsurf/mcp_config.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
+- **Cline** — `cline_mcp_settings.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
+- **Zed** — `~/.config/zed/settings.json`: `{ "context_servers": { "playwright-e2e": { "command": { "path": "npx", "args": ["-y", "playwright-e2e-mcp"] } } } }`
+
 - [Tool reference](docs/tools.md): every argument, example outputs, edge cases handled
 - [Hosted endpoint](docs/hosted-endpoint.md): the HTTP bridge for ChatGPT and claude.ai connectors
 - [Security](SECURITY.md): the security model and how to report a vulnerability
