@@ -53,15 +53,28 @@ with `PW_MCP_HTTP_TOKEN` unset.
 
 **Add it to claude.ai (or Claude Desktop's connectors):** Settings → Connectors →
 *Add custom connector* → paste the endpoint above and leave the OAuth fields
-empty. Claude registers itself and opens a sign-in page; type the deployment's
+empty. Claude identifies itself and opens a sign-in page; type the deployment's
 access key (the value of `PW_MCP_HTTP_TOKEN`) and press **Allow access**. The
-bridge is its own small OAuth 2.1 server (discovery, dynamic client
-registration, authorization code with PKCE S256, refresh tokens) and keeps no
-state: client ids, codes and tokens are signed with a key derived from
+bridge is its own small OAuth 2.1 server (discovery, Client ID Metadata
+Documents, dynamic client registration for older clients, authorization code
+with PKCE S256, refresh tokens) and keeps no state: client ids, codes and tokens are signed with a key derived from
 `PW_MCP_HTTP_TOKEN`, access tokens last an hour and refresh tokens 30 days, and
 changing `PW_MCP_HTTP_TOKEN` signs every connected client out. The sign-in page
 shows which site will receive access, so only type the key when that is the
 app you are connecting.
+
+**How apps identify themselves.** Current MCP clients use a Client ID Metadata
+Document: their `client_id` is an https URL (for example
+`https://app.example.com/oauth/client.json`), and the bridge fetches the small
+JSON document there to learn the app's name and where it may send you back.
+The document's `client_id` must equal its URL, it must list its redirect URIs,
+and it must be a public client (no secret). The fetch is fenced: https only, no
+redirects, never to a private, loopback or cloud-metadata address, 5 seconds
+and 16 KB at most, and a good document is cached for its `max-age` (5 minutes
+by default, at most an hour). The sign-in page shows the domain that published
+the document when it differs from the return address. Older clients that still
+register themselves (RFC 7591, now deprecated in MCP) keep working.
+`PW_MCP_OAUTH_CIMD=0` turns metadata documents off.
 
 **Limits on guessing.** After 20 wrong tokens or access keys from one address
 within 15 minutes (`PW_MCP_MAX_FAILED_AUTH`), that address gets `429` until the
@@ -69,7 +82,7 @@ oldest failure is 15 minutes old. Each warm serverless instance counts on its
 own, so for a public deployment also add a rate-limit rule for `/oauth/authorize`
 and `/api/mcp` in the Vercel Firewall. To accept only known apps, set
 `PW_MCP_OAUTH_REDIRECT_HOSTS` (for example `claude.ai,chatgpt.com`); registration
-then refuses any app that returns users elsewhere.
+and metadata documents are then refused for any app that returns users elsewhere.
 
 **Signing clients out.** Sign-ins carry no server-side state, so one client
 cannot be signed out on its own: changing `PW_MCP_HTTP_TOKEN` signs out every
