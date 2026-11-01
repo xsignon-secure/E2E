@@ -113,6 +113,22 @@ curl -X POST https://playwright-e2e-mcp.vercel.app/api/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
 ```
 
+## Discovery: Server Card and AI Catalog
+
+The endpoint publishes an [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards)
+at `/api/mcp/server-card` and an AI Catalog that links to it at `/.well-known/ai-catalog.json`.
+Registries, IDEs and agents read them to learn the name, version, icon, transport and protocol
+versions before they connect. Both are public (no token), carry no secrets and list no tools; when
+the deployment has a token, the card says an `Authorization` header is required.
+
+```bash
+curl -H 'accept: application/mcp-server-card+json' https://playwright-e2e-mcp.vercel.app/api/mcp/server-card
+curl https://playwright-e2e-mcp.vercel.app/.well-known/ai-catalog.json
+```
+
+The bridge speaks both the stateless 2026-07-28 MCP revision (clients that call
+`server/discover` first) and the 2025 `initialize` handshake on the same URL.
+
 Redeploy after a change: merge to `main`. Vercel's Git integration deploys
 every push, so there is no token to manage and no CLI step — watch the
 `Vercel` commit status for the deployment result.

@@ -434,6 +434,8 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_PROJECT_ROOT` | server cwd | Default project root for every tool |
 | `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard). All nineteen tool definitions cost about 16k tokens of context per request; `core` costs about 5k (12k and 2.6k with `PW_MCP_OUTPUT_SCHEMAS=0`) |
 | `PW_MCP_OUTPUT_SCHEMAS` | on | `0` leaves the output schemas out of the tool list to save context. Results still carry `structuredContent` (see [Structured results](docs/tools.md#structured-results)) |
+| `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
+| `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |

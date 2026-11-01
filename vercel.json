@@ -7,6 +7,14 @@
   },
   "rewrites": [
     {
+      "source": "/api/mcp/server-card",
+      "destination": "/api/mcp?mcp_route=server-card"
+    },
+    {
+      "source": "/.well-known/ai-catalog.json",
+      "destination": "/api/mcp?mcp_route=ai-catalog"
+    },
+    {
       "source": "/.well-known/oauth-protected-resource/:path*",
       "destination": "/api/mcp?oauth_route=/.well-known/oauth-protected-resource/:path*"
     },
