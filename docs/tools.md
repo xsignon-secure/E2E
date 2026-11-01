@@ -681,3 +681,18 @@ request; the stateless HTTP bridge cannot do that for 2025 clients, so there it 
 before when it can't; `always` refuses to write in clients that can't ask; `off` never asks.
 The confirmation is shown by your client. It helps people stay in control; it is not a security
 boundary against a client that answers for them.
+
+## Interactive test report (MCP Apps)
+
+In clients that support MCP Apps (Claude, ChatGPT, Cursor, VS Code and others), the results of
+`run-test`, `get-run-status` and `get-failure` also come with an interactive report: counts and a
+pass/fail bar, a filterable list of failures, and buttons to show a failure's details (expected
+vs. received), re-run one test, run the same tests again, or ask the assistant to fix a test. A
+background run started with `background: true` updates the report by itself when it finishes.
+
+The tools name the view in `_meta.ui.resourceUri` (`ui://playwright-e2e-mcp/test-report.html`),
+and the server serves it as `text/html;profile=mcp-app`. The page is self-contained: it loads
+nothing from the network, declares no outside domains, writes test output as text (never as
+HTML), and only calls this server's own tools through your client. Clients without MCP Apps
+ignore the metadata and show the text result as before; the text and `structuredContent` are
+unchanged. Set `PW_MCP_APPS=0` to turn the view off.

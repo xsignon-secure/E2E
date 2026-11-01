@@ -96,6 +96,7 @@ async function main(): Promise<void> {
         '  PW_MCP_LOGIN_ENV           extra variables save-login may type ({{env:NAME}}), comma separated',
         '  PW_MCP_PROTOCOL            legacy = do not offer the 2026-07-28 MCP revision',
         '  PW_MCP_CONFIRM_WRITES      auto | always | off: ask before changing files (default auto)',
+        '  PW_MCP_APPS=0              no interactive test report in MCP Apps clients',
         '  PW_MCP_SKILLS              0 = do not serve the bundled skill over the Skills extension',
         '  PW_MCP_NO_UPDATE_CHECK     1 = doctor does not ask npm whether a newer version is out',
         '  LOG_LEVEL / MCP_LOG_LEVEL  debug | info | warn | error | silent (default: info)',
