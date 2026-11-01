@@ -13,7 +13,7 @@ and concrete next steps. It can also propose and apply a verified fix for a brok
 locator, inspect pages behind a login, run long suites in the background and keep
 a local history of every run.
 
-This skill is written for playwright-e2e-mcp 0.8.0 and works with 0.2.0 or
+This skill is written for playwright-e2e-mcp 0.9.0 and works with 0.2.0 or
 newer. If `suggest-fix`, `get-run-status` or `analyze-history` is missing, the
 server is older than 0.2.0: use the steps that do not need those tools and tell
 the user to update it. `diagnose-flaky`'s per-test table and `isolate` option
@@ -25,7 +25,9 @@ history views and strict-mode fixes in `suggest-fix` arrived in 0.5.0;
 `save-login`, `check-test-change` and `quarantine` arrived in 0.7.0; the
 `switchTab` page step, `blockWrites`, recovery of crashed runs and
 pytest-playwright projects (`run-test`, `get-failure`, `list-tests`) arrived in
-0.8.0. If `doctor` says a newer version is out, pass its upgrade command on to
+0.8.0; the free self-hosted history server (`PW_MCP_HISTORY_URL` /
+`PW_MCP_HISTORY_TOKEN`, replacing the old Pro settings, which still work) arrived
+in 0.9.0. If `doctor` says a newer version is out, pass its upgrade command on to
 the user.
 
 ## Before you start
@@ -281,7 +283,7 @@ with the commit it tested. `analyze-history` views:
   `selector` for one region) returns the accessibility snapshot and a
   `toMatchAriaSnapshot` assertion to paste into a spec.
 - **Set up CI:** when the user wants the same diagnosis on every pull request,
-  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.8.0`) or the
+  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.9.0`) or the
   `npx -y playwright-e2e-mcp ci` command in `references/setup.md`. It writes the
   run, flaky verdicts and fix diffs to the job summary and one PR comment.
 - **Accessibility:** `audit-accessibility` with `url` runs axe-core against
