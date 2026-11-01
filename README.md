@@ -5,11 +5,11 @@
 <h1 align="center">playwright-e2e-mcp</h1>
 
 <p align="center"><b>The test doctor for AI agents.</b><br>
-Your Playwright test fails. Your AI finds out why, fixes it, and proves the fix works.</p>
+Your Playwright test fails. Your AI finds out why, fixes it, and <b>proves the fix works</b>, or tells you it's a real bug.</p>
 
 <p align="center">
 
-[![npm](https://img.shields.io/npm/v/playwright-e2e-mcp?color=2563eb)](https://www.npmjs.com/package/playwright-e2e-mcp) [![npm downloads](https://img.shields.io/npm/dm/playwright-e2e-mcp?color=2563eb)](https://www.npmjs.com/package/playwright-e2e-mcp) [![CI](https://github.com/xsignon-secure/E2E/actions/workflows/ci.yml/badge.svg)](https://github.com/xsignon-secure/E2E/actions/workflows/ci.yml) [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.xsignon--secure%2FE2E-2563eb)](https://registry.modelcontextprotocol.io/) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![npm](https://img.shields.io/npm/v/playwright-e2e-mcp?color=2563eb)](https://www.npmjs.com/package/playwright-e2e-mcp) [![npm downloads](https://img.shields.io/npm/dm/playwright-e2e-mcp?color=2563eb)](https://www.npmjs.com/package/playwright-e2e-mcp) [![CI](https://github.com/xsignon-secure/E2E/actions/workflows/ci.yml/badge.svg)](https://github.com/xsignon-secure/E2E/actions/workflows/ci.yml) [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.xsignon--secure%2FE2E-2563eb)](https://registry.modelcontextprotocol.io/) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![100% free](https://img.shields.io/badge/price-100%25%20free-16a34a)](#-free-and-open-source)
 
 [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCJdfQ==)
 [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_server-0098FF?logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect?url=vscode%3Amcp%2Finstall%3F%257B%2522name%2522%253A%2522playwright-e2e%2522%252C%2522command%2522%253A%2522npx%2522%252C%2522args%2522%253A%255B%2522-y%2522%252C%2522playwright-e2e-mcp%2522%255D%257D)
@@ -24,122 +24,66 @@ Your Playwright test fails. Your AI finds out why, fixes it, and proves the fix 
 <p align="center">⭐ <b>If it saves you a debugging session, <a href="https://github.com/xsignon-secure/E2E">a star</a> helps other Playwright users find it.</b></p>
 
 <p align="center">
-  <a href="#getting-started">Getting started</a> ·
-  <a href="#tools">Tools</a> ·
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-what-you-get">Features</a> ·
+  <a href="#-tools">Tools</a> ·
   <a href="docs/tools.md">Tool reference</a> ·
-  <a href="#ci-github-action-and-ci-command">GitHub Action</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="https://github.com/xsignon-secure/E2E/releases">Changelog</a> ·
-  <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#-ci-github-action-gitlab-and-any-ci">GitHub Action</a> ·
+  <a href="#-benchmark">Benchmark</a> ·
+  <a href="https://github.com/xsignon-secure/E2E/releases">Changelog</a>
 </p>
 
-An [MCP](https://modelcontextprotocol.io) server and agent skill that gives your AI assistant
-(Claude, Cursor, VS Code Copilot, Gemini, Codex) a full Playwright toolkit: a **test runner**,
-a **failure detective** and a **fixer that checks its own work**. Other tools let an AI click
-around a browser. This one lets it **keep your test suite green**.
+An [MCP](https://modelcontextprotocol.io) server and agent skill that gives Claude, Cursor,
+VS Code Copilot, Codex, Gemini and any other MCP client a full Playwright toolkit: a **test
+runner**, a **failure detective** and a **fixer that checks its own work**. Browser MCPs let an
+AI click around a page. This one lets it **keep your test suite green**, for TypeScript and
+Python suites, on your laptop and in CI. Free, MIT, no account.
 
 ## ❌ Without it / ✅ With it
 
 **Without it**, your agent sees `Timeout 5000ms exceeded waiting for getByTestId('checkout')`,
-guesses a new selector, edits the test and hopes. Or it "fixes" the test around a real bug.
+guesses a new selector, edits the test and hopes. Or it "fixes" the test by deleting the
+assertion that caught a real bug.
 
-**With it**, your agent reads the page as it was when the test failed, swaps in a locator
-proven unique on that page, re-runs the test, and keeps the edit only if it passes. When the
-button is really gone, it tells you it's an app bug.
+**With it**, your agent reads the page **as it was when the test failed** (from the Playwright
+trace), swaps in a locator proven unique on that page, re-runs the test and keeps the edit only
+if it passes. When the button is really gone, it says so: that's an app bug, not a test to patch.
+And a heal guard blocks any "fix" that went green by checking less.
 
+```mermaid
+flowchart LR
+  A["run-test<br/>or load-report (CI)"] --> B["get-failure<br/>DOM at failure, requests, console"]
+  B --> C{"suggest-fix"}
+  C -->|"locator proven on the page"| D["apply + re-run"]
+  D -->|green| E["✅ fixed and verified"]
+  D -->|still red| F["↩️ edit reverted"]
+  C -->|"element really gone"| G["🐞 reported as an app bug"]
+  D -.-> H["check-test-change<br/>blocks fixes that check less"]
 ```
-run-test ──────┐
-load-report ───┴─▶ get-failure ──▶ suggest-fix (apply + re-run) ──▶ green
- (CI job report)        │                 └─ refuses when the element is really gone (app bug)
-                        └─ DOM at failure, failed requests, console errors
-every run ──▶ analyze-history (flaky / broken / slow / which commit broke it)
-test code ──▶ audit-tests (flake risks, ranked by history, verified rewrites)
-red at HEAD ─▶ bisect-failure (runs it across git history, names the breaking commit)
-```
 
-## Key features
+## ⚡ Quick start
 
-- **Fixes are proven, not guessed.** Every fix is re-run before it's kept, and undone if the test is still red.
-- **Honest.** It won't paper over a real bug to make a test pass.
-- **Works on CI failures too.** Load a CI job's report and traces and get the same diagnosis and fixes.
-- **TypeScript and Python.** Works on `@playwright/test` suites and on `pytest-playwright` ones, with the same failure diagnosis and traces.
-- **Flakiness with evidence.** Names the flaky test, whether it's a race, shared state or test order, and the seed that reproduces it.
-- **Lean.** With the `core` tool set, finding and fixing a broken locator took about **3,000 tokens**
-  versus about **7,200** with Playwright MCP plus a shell, and a look at a page costs about 570 tokens
-  against 2,300 for a Playwright MCP snapshot. All 19 tools add about 11.5k tokens of definitions to
-  every request, so load only the [profiles](#configuration) you use, or start with `--tools=auto`
-  (about 2.4k) and let the agent load the rest when it needs them ([benchmark](#benchmark)).
-- **Free and open source.** MIT, no account, no API key, no telemetry. Every tool and feature is free, including the shared team history server you can host yourself.
-
-## 🚀 What only this MCP does
-
-Most testing MCPs let an AI drive a browser: Microsoft's Playwright MCP, Chrome DevTools MCP,
-ExecuteAutomation's mcp-playwright and the Selenium MCP. They're great for clicking through a
-page. None of them, as of October 2026, does the following. This one does:
-
-| Capability | What you get |
-| --- | --- |
-| 🛡️ **A guard against "fixes" that check less** | `check-test-change` compares a changed test with its old self and blocks a fix that went green by deleting an assertion, skipping the test or adding `.only`; it warns on weaker matchers, hard waits, forced clicks and swallowed errors. The same check runs in CI as `guard` |
-| 🧊 **Quarantine with an owner and an expiry** | `quarantine` keeps a flaky test running and reported while its failure stops blocking the build, with who fixes it, why, and the date it blocks again |
-| 🎯 **Find the commit that broke a test** | `bisect-failure` runs the test across your git history, in a temporary worktree that leaves your checkout alone, and names the first bad commit with its diff and the failure |
-| 🧪 **Flake-risk audit of your test code** | `audit-tests` finds hard waits, one-shot assertions, missing `await`s and fragile selectors. It ranks them by how flaky those tests really were, then applies the safe rewrites and re-runs them to prove them |
-| ✅ **Fixes that prove themselves** | `suggest-fix` swaps in a locator proven unique on the DOM at failure, re-runs the test and reverts if it's still red. It refuses to patch over a real app bug |
-| 🔬 **Flaky-test verdicts with evidence** | `diagnose-flaky` repeats tests with retries off and tells a race from shared state from **test order**, naming the test it depends on and the seed that reproduces it |
-| 📈 **Memory of every run** | `analyze-history` ranks flaky, regressed and broken tests, groups failures by cause, tracks slow tests and names the commit where each one went bad |
-| 🏗️ **Diagnose CI failures locally** | `load-report` loads a CI job's report and traces (sharded too), so the same diagnosis and verified fixes work on failures from CI |
-| 💬 **One-click fixes on pull requests** | The GitHub Action verifies each fix in CI and posts it as a **suggested change** reviewers apply with one click |
-| ♿⚡ **Audits that hand back tests** | Accessibility (axe-core) and Web Vitals audits return verified locators for each problem plus a ready regression or budget test |
-
-It works alongside a browser MCP rather than replacing it: that one drives the page, and this one
-keeps your suite green.
-
-## What you can ask
-
-| | You ask your AI… | It does this |
-|---|---|---|
-| 🏃 | "Run my tests" | Runs the suite and reports every failure with its file, line, cause and a fix hint. One root cause breaking 30 tests shows up as **one** problem. |
-| 🔍 | "Why did this fail?" | Reads Playwright's trace: the page at the moment of failure, the broken request, the console error. No guessing. |
-| 🛠️ | "Fix it" | Swaps in a locator proven unique on the page, **re-runs the test**, and undoes the edit if it's still red. If the button is really gone, it tells you it's an app bug instead of hiding it. |
-| 🎲 | "Is this test flaky?" | Re-runs it many ways (repeated, alone, in random order) and names the exact test and seed that cause the flake. |
-| 📈 | "What's been breaking lately?" | Keeps a local run history and separates flaky, newly broken and always-broken tests; shows the slowest tests, stability by day and **the commit where each test went bad**. |
-| ☁️ | "Why did CI fail?" | Loads the CI job's report (or merges sharded blob reports), maps its paths onto your checkout and finds the traces in the downloaded artifact, so the same diagnosis and fixes work on CI failures. |
-| ✍️ | "Write a test for this flow" | Walks the steps on the live page first, writes a spec that replays them with assertions on where the flow landed (URL and accessibility snapshot), and runs it once to prove it passes. |
-| ♿ | "Check this page for accessibility" | Runs axe-core (WCAG 2.2 AA) and returns each problem with a ready-to-paste locator and regression test. |
-| ⚡ | "Why is this page slow?" | Measures Web Vitals (LCP, CLS, INP, TBT) on desktop or a throttled phone, names the slow element and the elements that jump, and hands back a budget test. |
-| 🧪 | "Show me the error state" | Mocks API responses (500s, empty lists, slow calls) so the AI can inspect, audit or measure states that are hard to reach. |
-| 🔑 | "Log in and save the session" | Logs in once (password from an environment variable, **authenticator code generated from the TOTP secret**), checks the session works and saves it for tests and page tools; reuses it until it expires. The password never passes through the chat. |
-| 🛡️ | "Did that fix cheat?" | Compares the changed tests with git and blocks a fix that passes by deleting assertions or skipping tests. |
-| 🧊 | "Quarantine this flaky test" | Keeps it running and reported, stops it failing the build, with an owner and an expiry date. |
-| 🔐 | "Test the page after login" | Works behind sign-in with saved sessions, headers and click/fill steps, in Chromium, Firefox or WebKit, and can record or replay network traffic from a HAR file. |
-| 🗂️ | "Check the page that opens in a new tab" | Follows popups and new tabs with a `switchTab` step and lists every open tab. |
-| 🔒 | "Look, but don't change anything" | `blockWrites` stops POST, PUT, PATCH and DELETE requests from reaching the real backend while the AI inspects a page. |
-| 🐍 | "Run my pytest suite" | Runs `pytest-playwright` projects with the same tools: failures with the test's own file and line, the code frame and the trace. |
-| 🤖 | "Do it in CI" | A [GitHub Action and `ci` command](#ci-github-action-and-ci-command) post the diagnosis, flaky verdict and fix diffs on your PR. |
-
-## Requirements
-
-- Node.js 22 or newer
-- A project that uses `@playwright/test`, with a browser installed (`npx playwright install chromium`),
-  or a Python project that uses `pytest-playwright` ([see below](#python-projects-pytest-playwright))
-- Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Codex, Gemini CLI or any other MCP client
-
-## Getting started
-
-**Fastest:** run this in your project root. It adds the server to every client config it finds
-(Claude Code, Cursor, VS Code, Gemini CLI, Codex) and installs the agent skill, leaving your
-other servers alone:
+Run this in your project root. It adds the server to every MCP client config it finds (Claude
+Code, Cursor, VS Code, Gemini CLI, Codex), installs the agent skill and leaves your other servers
+alone:
 
 ```bash
-npx -y playwright-e2e-mcp init            # --client all | cursor,vscode … · --dry-run
-npx -y playwright-e2e-mcp doctor          # checks Node, Playwright, browsers, client setup and updates
+npx -y playwright-e2e-mcp init      # --client all | cursor,vscode … · --dry-run
+npx -y playwright-e2e-mcp doctor    # checks Node, Playwright, browsers, client setup and updates
 ```
 
-**Or let your agent do it.** Paste this into any coding agent:
+Then restart your client and ask:
+
+```
+Run my Playwright tests and fix whatever fails.
+```
+
+**Or let your agent install it.** Paste this into any coding agent:
 
 > Install the playwright-e2e-mcp server and skill by following
 > https://raw.githubusercontent.com/xsignon-secure/E2E/main/llms-install.md
 
-**Standard config** works in most clients:
+**Or add the standard config** by hand (works in most clients):
 
 ```json
 {
@@ -152,8 +96,10 @@ npx -y playwright-e2e-mcp doctor          # checks Node, Playwright, browsers, c
 }
 ```
 
-The server uses its working directory as the project root. If your client starts it somewhere
-else (such as your home directory), add `"env": { "PW_MCP_PROJECT_ROOT": "/path/to/your/project" }`.
+**Needs:** Node.js 22+, and a project with `@playwright/test` and a browser
+(`npx playwright install chromium`) or with [`pytest-playwright`](#-python-projects-pytest-playwright).
+The server uses its working directory as the project root; if your client starts it elsewhere,
+add `"env": { "PW_MCP_PROJECT_ROOT": "/path/to/your/project" }`.
 
 <details>
 <summary><b>Claude Code</b></summary>
@@ -241,61 +187,45 @@ Or paste the standard config into `.gemini/settings.json` (Qwen Code: `.qwen/set
 </details>
 
 <details>
-<summary><b>Windsurf, Cline, Zed and other clients</b></summary>
+<summary><b>Windsurf, Cline, Zed, Freebuff and other clients</b></summary>
 
 Add the standard config to the client's MCP config file (Cline: *MCP Servers → Configure*).
 Clients that take a command, such as Zed, run `npx` with the arguments `-y playwright-e2e-mcp`.
 
-</details>
-
-<details>
-<summary><b>Freebuff / Codebuff</b></summary>
-
-Drop an `mcp.json` with the standard config into your project's `.agents/` folder. This repo
-ships one in [`.agents/mcp.json`](.agents/mcp.json), so opening the checkout attaches the
-server workspace-wide. Freebuff asks you to trust a repository's `.agents/` on first run.
+Freebuff / Codebuff: drop an `mcp.json` with the standard config into your project's `.agents/`
+folder. This repo ships one in [`.agents/mcp.json`](.agents/mcp.json); Freebuff asks you to trust
+a repository's `.agents/` on first run.
 
 </details>
 
 <details>
-<summary><b>ChatGPT and other remote-only clients</b></summary>
+<summary><b>ChatGPT, claude.ai and other remote-only clients</b></summary>
 
 Some clients only accept a remote HTTPS server. This repo ships a Streamable HTTP bridge you
-can host for free on Vercel, with OAuth sign-in for claude.ai connectors. See
-[Hosted endpoint](docs/hosted-endpoint.md). On Vercel the page tools (inspect a page, check
-selectors, accessibility and Web Vitals audits) run on a bundled Chromium against public URLs.
-Running and fixing your own tests needs your project, so use the local install for that.
+can host for free on Vercel, with OAuth sign-in for claude.ai connectors (dynamic registration
+and Client ID Metadata Documents). See [Hosted endpoint](docs/hosted-endpoint.md). On Vercel the
+page tools (inspect a page, check selectors, accessibility and Web Vitals audits) run on a
+bundled Chromium against public URLs. Running and fixing your own tests needs your project, so
+use the local install for that.
 
 </details>
 
 <details>
-<summary><b>Other ways to install</b></summary>
+<summary><b>Other ways to install: skill only, Docker, registry, tarball</b></summary>
 
 | Route | How |
 | --- | --- |
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
+| Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
 | Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.11.0` (pin a release tag) |
 | Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.11.0/playwright-e2e-mcp-0.11.0.tgz` |
-| Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
 
-### Your first prompt
-
-Restart your client, then ask:
-
-```
-Run my Playwright tests and fix whatever fails.
-```
-
-Your agent should run the suite, read the failure, and propose a fix it has re-run. To check the
-setup without your own tests, ask it to run `examples/sample-test.spec.ts` from this repo.
-
-### Updating
-
-How you get a new release depends on how you installed it:
+<details>
+<summary><b>Updating</b></summary>
 
 | Installed with | To update |
 | --- | --- |
@@ -312,145 +242,116 @@ How you get a new release depends on how you installed it:
 command for your setup. Upgrade notes for each release are on the
 [releases page](https://github.com/xsignon-secure/E2E/releases).
 
-## Python projects (pytest-playwright)
+</details>
 
-The same server works on Python suites. When the project has no Node Playwright but has a
-`pytest.ini`, a `[tool.pytest…]` table in `pyproject.toml`, `setup.cfg` / `tox.ini` pytest
-settings or a `conftest.py`, the tools run `python -m pytest` instead:
+## 💬 What you can ask
 
-- **`run-test`** runs the suite, a file, `tests/test_cart.py::TestCart::test_add` or
-  `tests/test_cart.py:42` (the test at that line). `grep` becomes `-k`, `browser` becomes
-  `--browser`, `retries` uses pytest-rerunfailures. Failures that finished are kept even when
-  the run is killed.
-- **`get-failure`** shows the message, the code frame, expected vs actual and, from the trace
-  pytest-playwright keeps (`--tracing retain-on-failure` is added for you), the failed action,
-  the DOM at failure, network and console.
-- **`list-tests`**, **`analyze-history`**, **`quarantine`** and the **`ci`** command work as for Node.
-- Not yet for Python: **`suggest-fix`** points at the DOM at failure but does not patch `.py`
-  files, **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`**,
-  **`check-test-change`** and **`generate-e2e-test`** read and write TypeScript/JavaScript specs
-  only. The page tools (`inspect-page`, `validate-selector`, …) launch the browser with Node
-  Playwright, so they need `@playwright/test` installed in the project.
+| | You ask your AI… | It does this |
+|---|---|---|
+| 🏃 | "Run my tests" | Runs the suite and reports every failure with file, line, cause and a fix hint. One root cause breaking 30 tests shows up as **one** problem. |
+| 🔍 | "Why did this fail?" | Reads Playwright's trace: the page at the moment of failure, the broken request, the console error. No guessing. |
+| 🛠️ | "Fix it" | Swaps in a locator proven unique on that page, **re-runs the test** and undoes the edit if it's still red. If the element is really gone, it tells you it's an app bug. |
+| ☁️ | "Why did CI fail?" | Loads the CI job's report (sharded blob reports too) and its traces, so the same diagnosis and fixes work on CI failures. |
+| 🎲 | "Is this test flaky?" | Re-runs it with retries off, alone and in shuffled order, and names the race, the shared state or the **test it depends on**, with the seed that reproduces it. |
+| 🎯 | "Which commit broke this?" | Bisects git history in a throwaway worktree and names the first bad commit, its diff and the failure there. |
+| 📈 | "What's been breaking lately?" | Ranks flaky, newly broken and slow tests from the run history and names the commit where each went bad. |
+| 🧊 | "Quarantine this flaky test" | Keeps it running and reported but stops it failing the build, with an owner and an expiry date. |
+| 🛡️ | "Did that fix cheat?" | Compares the changed tests with git and blocks a fix that passes by deleting assertions, skipping tests or adding `.only`. |
+| ✍️ | "Write a test for this flow" | Walks the steps on the live page, writes a spec with real locators and assertions on where the flow landed, and runs it once to prove it passes. |
+| 🔑 | "Log in and save the session" | Signs in once, **2FA codes included** (generated from your TOTP secret), checks the session and saves it. The password never passes through the chat. |
+| ♿ | "Check this page for accessibility" | Runs axe-core (WCAG 2.2 AA) and returns each problem with a verified locator and a ready regression test. |
+| ⚡ | "Why is this page slow?" | Measures Web Vitals (LCP, CLS, INP, TBT) on desktop or a throttled phone, names the slow and shifting elements, and hands back a budget test. |
+| 🐍 | "Run my pytest suite" | Runs `pytest-playwright` projects with the same failure diagnosis and traces. |
 
-Results come from a small pytest plugin the server loads with `-p` from its temp folder; nothing
-is installed in your project. It uses your Python: `PW_MCP_PYTHON`, else `.venv`, `venv` or `env`
-in the project, else `python3` / `python`.
+## ✨ What you get
 
-```bash
-pip install pytest-playwright && playwright install chromium
-```
+### 🩺 A fix loop that proves itself
 
-## What's new in 0.11
+- **Fixes are verified, not guessed.** `suggest-fix` picks a locator proven unique on the DOM at
+  failure, writes it, re-runs the test and reverts if it's still red. Strict-mode violations get
+  the locator of the intended match; changed copy gets the new expected text.
+- **Honest about real bugs.** When the element is really gone, it refuses to patch the test and
+  reports an app bug.
+- **Heal guard.** `check-test-change` (and `playwright-e2e-mcp guard` in CI) blocks a "fix" that
+  went green by deleting an assertion, skipping the test, adding `.only` or swallowing the error,
+  and warns on weaker matchers, hard waits, forced clicks and raised timeouts.
+- **Asks before it writes.** Applying a fix, writing a test, quarantining or replacing a visual
+  baseline shows you the exact diff and waits for your yes in clients that support MCP
+  questions (`PW_MCP_CONFIRM_WRITES`).
 
-- **Fewer tokens.** `inspect-page` now returns the compact locator map by default: on the
-  benchmark storefront a page look costs about 570 tokens instead of 3,600 (Playwright MCP's
-  snapshot of the same page is about 2,300). Repeated blocks such as product cards are shown
-  once. `view: 'elements'` still gives the full DOM inventory.
-- **Load tools on request.** `--tools=auto` (or `PW_MCP_TOOLS=auto`) starts with the core fix
-  loop plus `load-tools`, about 2.4k tokens of tool definitions instead of 11.5k; the agent
-  loads the page, audit or history tools when a task needs them.
-- **Smaller tool definitions.** Input schemas are listed without length and item limits; the
-  server still checks every call against them.
+### 🔬 Flaky tests, history and the breaking commit
 
-## What's new in 0.10
+- **Flaky verdicts with evidence.** `diagnose-flaky` tells a race from shared state from a
+  **test-order** dependency, and gives the seed that replays it.
+- **Quarantine with an owner and an expiry.** The test keeps running and being reported; it stops
+  blocking the build until the date you set.
+- **Memory of every run.** `analyze-history` ranks flaky, regressed, broken and slow tests and
+  names the commit where each went bad. Share one history across every CI job and laptop with the
+  free, [self-hosted history server](history-server/README.md) (one `docker run`, dashboard included).
+- **`bisect-failure`** finds the first bad commit without touching your checkout.
+- **`audit-tests`** finds flake risks in the test code (hard waits, one-shot assertions, missing
+  `await`s, fragile selectors), ranks them by real flakiness and applies the safe rewrites with a
+  verifying run.
 
-- **Asks before changing your files.** Applying a fix, writing a new test, quarantining a test or
-  replacing a visual baseline now shows you the exact change and waits for your yes, in clients
-  that support MCP questions (elicitation). No writes nothing. `PW_MCP_CONFIRM_WRITES` sets the
-  policy (`auto`, `always`, `off`).
-- **Interactive test report** in Claude, ChatGPT, Cursor and other MCP Apps clients: counts,
-  a filterable list of failures, expected vs. received, and one-click re-run or "Ask to fix".
-  Other clients show the text result as before. `PW_MCP_APPS=0` turns it off.
-- **Newer sign-in for the hosted endpoint:** OAuth clients can identify with a Client ID
-  Metadata Document (the MCP default since 2025-11-25); dynamic registration keeps working.
+### 🤖 CI that comments with working fixes
 
-## What's new in 0.9
+- **GitHub Action** that writes the diagnosis to the job summary, keeps one PR comment up to date
+  and posts each verified fix as a **suggested change** reviewers apply with one click.
+- **GitLab CI** template and a plain `ci` command for Jenkins, CircleCI or anything else.
+- **Diagnose CI locally:** `load-report` maps a CI job's report and traces onto your checkout.
 
-- **Everything is free, including team history.** The CI history service that used to be a
-  paid add-on is now in this repo as a [self-hosted history server](history-server/README.md)
-  (MIT): one `docker run`, plain Node, or a free Vercel or Azure account. You hand out the
-  tokens; there is no account or billing anywhere.
-- **New names:** `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` and the Action's `history-url` /
-  `history-token`. The old `PW_MCP_PRO_*`, `pro-url` and `pro-key` names keep working.
+### 🌐 Page tools with locators that already work
 
-## What's new in 0.8
+- **`inspect-page`** returns a compact map of verified Playwright locators (about **570 tokens**
+  for a storefront page, against 2,300 for a Playwright MCP snapshot), or the full DOM inventory,
+  or the accessibility snapshot with a ready `toMatchAriaSnapshot` assertion.
+- **Reaches the hard screens:** saved logins, headers, click and fill steps, popups and new tabs,
+  API mocks (500s, empty lists, slow calls), HAR record and replay, phone and tablet presets,
+  Chromium, Firefox, WebKit, Chrome and Edge.
+- **Look without changing anything:** `blockWrites` stops POST, PUT, PATCH and DELETE requests
+  from reaching a real backend.
+- **Accessibility, Web Vitals and visual diffs** that return locators and ready tests, not just a score.
 
-- **Python suites:** projects that use `pytest-playwright` work with `run-test`, `get-failure`
-  and `list-tests`, traces included ([details](#python-projects-pytest-playwright)).
-- **Popups and new tabs:** a `switchTab` step follows the page into a popup or new tab, and
-  results list every open tab.
-- **Look without changing anything:** `blockWrites` (or `PW_MCP_BLOCK_WRITES=1`) stops the page
-  tools from sending POST, PUT, PATCH or DELETE requests to a real backend.
-- **Crashed runs still report:** when Playwright dies before writing its report, the failures
-  that finished are kept and the run is marked partial.
-- **Stricter heal guard:** an assertion inside a `try` whose `catch` swallows the error is
-  blocked, and a web-first assertion without `await` is flagged.
-- **MCP 2026-07-28:** the new stateless protocol revision, cache hints, a server icon, the agent
-  skill served over the Skills extension, and a Server Card for discovery.
-- **Update check:** `doctor` says when a newer version is out and how to update
-  ([Updating](#updating)).
+### 🚀 Built for agents in 2026
 
-## What's new in 0.7
+- **Lean on context.** Start with `--tools=auto` (about 2.4k tokens of tool definitions instead of
+  11.5k) and the agent loads the page, audit or history tools when it needs them, or pick a
+  profile: `core`, `triage`, `inspect`, `author`.
+- **Interactive test report** in MCP Apps clients (Claude, ChatGPT, Cursor): filter failures, see
+  expected vs. received, re-run or "Ask to fix" in one click.
+- **Current MCP:** the stateless 2026-07-28 revision (2025 clients still work), structured results
+  with output schemas, tool annotations for accurate safety prompts, the skill served over the
+  Skills extension, and a Server Card for discovery.
+- **Everywhere you work:** npm, Claude Code plugin, Claude Desktop bundle, Gemini CLI extension,
+  Docker image on GHCR, and an HTTP bridge with OAuth for remote-only clients.
 
-- **Log in once, safely:** `save-login` signs in (2FA codes included) with secrets read from the
-  environment, checks the session and saves it as a `storageState` file; it reuses the session
-  until it stops working.
-- **Heal guard:** `check-test-change` and `playwright-e2e-mcp guard` block a test "fix" that
-  passes by checking less (deleted assertions, skipped tests, `.only`).
-- **Flaky-test quarantine:** `quarantine` stops a known flaky test from failing the build for a
-  set time, with an owner and a reason, while it keeps running and being reported.
-
-## What's new in 0.6
-
-- **Find the commit that broke a test:** `bisect-failure` runs the test across git history in a
-  temporary worktree and names the first bad commit, its changes and the failure there.
-- **Flake-risk audit:** `audit-tests` finds hard waits, one-shot assertions, missing `await`s and
-  fragile selectors, ranked by real flakiness, and applies the safe rewrites with a verifying run.
-- **One-click fixes on pull requests:** the GitHub Action proves each fix in CI and posts it as a
-  suggested change.
-- **`doctor`:** `npx playwright-e2e-mcp doctor` checks Node, Playwright, browsers and client setup.
-- **Structured results:** every tool returns JSON next to its Markdown, with output schemas.
-- **Phones, tablets, Chrome and Edge:** `device` presets and `channel` for every page tool, and a
-  Docker image on `ghcr.io`.
-- **Node 22 or newer** is now required, and the hosted endpoint limits guessing of its key.
-
-[All release notes](https://github.com/xsignon-secure/E2E/releases)
-
-## Tools
+## 🧰 Tools
 
 | Tool | Purpose |
 | --- | --- |
-| `run-test` | Run Playwright tests and return stats, failures, diagnostics and hints; reports progress, and `background: true` returns a run id for long suites |
+| `run-test` | Run Playwright tests and return stats, failures grouped by root cause, diagnostics and hints; `background: true` returns a run id for long suites |
 | `get-run-status` | Progress or final result of a background run; can wait for it or cancel it |
-| `get-failure` | Deep analysis of one failure: stack, expected/actual, **DOM snapshot at failure (from the Playwright trace)**, failed requests, console errors, next steps |
-| `load-report` | Load a run from CI: a JSON report or a folder of sharded blob reports; CI paths are mapped onto the checkout and traces found in the unpacked artifact, so `get-failure`, `suggest-fix` and `diagnose-flaky` work on it, and the run joins the history with its commit |
-| `suggest-fix` | Patch a failure: a drifted locator is replaced with one **proven unique** on the DOM at failure, an ambiguous one (strict mode violation) gets the unique locator of the intended match, changed copy gets the new expected text; `apply: true` writes it, re-runs the test and reverts if still red |
-| `inspect-page` | Open a URL headlessly (optionally signed in, after steps) and return elements with **verified Playwright locators**, CSS selectors, visibility, text and console output, or the **accessibility snapshot with a ready `toMatchAriaSnapshot` assertion** |
-| `list-tests` | List available tests (`file`, `line`, full title, projects) with filtering |
-| `validate-selector` | Check a CSS selector, Playwright selector or **locator expression** against a live page: validity, match count, and a sturdier verified locator for each match |
-| `generate-e2e-test` | Scaffold a Playwright test from a description using the project's **real** selectors and verified locators from the live page, or **walk a flow** step by step on the live page and write a spec that is run once to prove it passes |
+| `get-failure` | Deep analysis of one failure: stack, expected/actual, **DOM snapshot at failure (from the trace)**, failed requests, console errors, next steps |
+| `load-report` | Load a run from CI (JSON report or sharded blob reports), map its paths onto the checkout and find the traces, so every other tool works on it |
+| `suggest-fix` | Patch a failure with a locator **proven unique** on the DOM at failure or the new expected text; `apply: true` writes it, re-runs and reverts if still red |
+| `check-test-change` | **Heal guard**: BLOCK deleted assertions, skipped or removed tests and `.only`; WARN on weaker matchers, hard waits, `force: true`, swallowed errors |
+| `diagnose-flaky` | Run a test 2–10 times **with retries off** and return `CONSISTENTLY FAILING`, `FLAKY` or `NOT REPRODUCING`; tells parallelism and **test-order** bugs from races |
+| `quarantine` | Quarantine a flaky test with an owner, a reason and an expiry (default 14 days); it keeps running but stops failing `run-test` and `ci` |
+| `analyze-history` | Rank flaky, regressed, broken and slow tests, group failures by cause, show stability by day and **the commit where each test went bad** |
+| `bisect-failure` | **Find the commit that broke a test**: binary-search git history in a temporary worktree (your checkout is untouched) |
+| `audit-tests` | Audit the **test code** for flake risks, ranked by real flakiness; `fix: true` rewrites the mechanical ones and verifies with a re-run |
+| `list-tests` | List tests (`file`, `line`, full title, projects) with filtering |
+| `inspect-page` | Open a URL (optionally signed in, after steps) and return **verified locators**, the full element inventory, or the **ARIA snapshot with a ready assertion** |
+| `validate-selector` | Check a CSS selector, Playwright selector or **locator expression** on a live page: match count and a sturdier verified locator for each match |
+| `generate-e2e-test` | Scaffold a test with the project's **real** selectors, or **walk a flow** on the live page and write a spec that is run once to prove it passes |
+| `save-login` | **Log in once and save the session** with `{{env:E2E_PASSWORD}}` and `{{totp}}` (2FA codes); reused until it expires; secrets never pass through the chat |
+| `audit-accessibility` | axe-core (WCAG 2.2 AA) violations, worst first, with **verified locators** and a regression check |
+| `audit-performance` | Lab **Web Vitals** (LCP, CLS, TBT, FCP, TTFB, INP), optionally as a throttled phone; names the LCP and shifting elements and returns a budget test |
 | `compare-visual-state` | Visual regression: screenshot before/after a change and report *what* moved and how colors shifted |
-| `audit-accessibility` | Run axe-core (WCAG 2.2 AA by default) on a page, signed in or after steps, and return violations worst first with **verified locators** for the offending elements and a regression check |
-| `audit-performance` | Measure lab **Web Vitals** (LCP, CLS, TBT, FCP, TTFB, INP during steps), optionally as a throttled phone and the median of several runs; rate them or check budgets, name the LCP and shifting elements as verified locators, list heavy and render-blocking requests, and return a budget test |
-| `diagnose-flaky` | Run a failing test 2–10 times **with retries disabled** and return an evidence verdict: `CONSISTENTLY FAILING`, `FLAKY` or `NOT REPRODUCING`; tells parallelism and **test-order** bugs from races |
-| `analyze-history` | Rank flaky, regressed and broken tests from the local run history, group failures by cause, list the slowest tests, show stability by day, name **the commit where each test went bad**, or show one test's timeline |
-| `audit-tests` | Audit the **test code** for flake risks (hard waits, one-shot assertions instead of web-first ones, missing `await`s, `.only`, force clicks, `networkidle`, element handles, layout selectors), ranked by how flaky those tests have been in the run history; `fix: true` rewrites the mechanical ones, re-runs the files and reverts if they fail |
-| `save-login` | **Log in once and save the session** (`storageState`): steps with `{{env:E2E_PASSWORD}}` and `{{totp}}` (authenticator code from a secret in the environment), a check that the session works, and reuse until it expires; secrets never pass through the chat |
-| `check-test-change` | **Heal guard**: compare changed tests with git (or a proposed fix with the file) and BLOCK deleted assertions, skipped or removed tests and `.only`; WARN on weaker matchers, hard waits, `force: true`, swallowed errors and raised timeouts or retries |
-| `quarantine` | Quarantine a flaky test with an owner, a reason and an expiry (default 14 days): it keeps running and being reported, but its failure no longer fails `run-test` or `ci` until the entry expires. Stored in `playwright-quarantine.json` |
-| `bisect-failure` | **Find the commit that broke a test**: binary-search git history between a good and a bad commit, running the test at each step in a temporary worktree (your checkout is untouched), and report the first bad commit, what it changed and how the test failed |
 
-Two **prompts** package the main workflows for clients that show them as slash commands:
-`fix-failing-test` and `triage-flaky-tests`.
-
-Every argument and example output is in the **[tool reference](docs/tools.md)**. All tools carry
-MCP tool annotations (`readOnlyHint`, `destructiveHint`, …), so clients can show accurate safety
-prompts.
-
-**Only need the fix loop?** `--tools=core` (or `PW_MCP_TOOLS=core`) exposes seven tools and cuts the
-tool-definition context by about three quarters ([one-click core install for Cursor](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==)). Other profiles: `triage`, `inspect`, `author`.
-Want the savings without losing tools? `--tools=auto` starts with the same seven plus `load-tools`,
-which the agent calls to turn on the page, audit or history tools when a task needs them.
+With `--tools=auto`, a `load-tools` tool turns on more tools mid-session. Two **prompts**,
+`fix-failing-test` and `triage-flaky-tests`, package the main workflows as slash commands. Every
+argument and example output is in the **[tool reference](docs/tools.md)**.
 
 <details>
 <summary><b>Typical workflow</b></summary>
@@ -464,41 +365,23 @@ which the agent calls to turn on the page, audit or history tools when a task ne
 3. `suggest-fix` `{ "index": 1 }` for a locator or copy change: review the diff, then
    `{ "index": 1, "apply": true }` to write it and verify with a re-run. If it reports the
    element is missing, fix the app, not the test.
-4. For anything it cannot patch: `inspect-page` `{ "url": "…", "view": "locators" }`
-   (add `storageState` or `actions` to reach the right screen), then `validate-selector`
-   to prove the new locator before editing.
+4. For anything it cannot patch: `inspect-page` `{ "url": "…" }` (add `storageState` or
+   `actions` to reach the right screen), then `validate-selector` to prove the new locator
+   before editing.
 5. If a failure looks intermittent: `diagnose-flaky` `{ "runs": 3 }` for fresh evidence,
-   and `analyze-history` to see how the test behaved across earlier runs
-   (`{ "view": "commits" }` names the commit where it went bad).
-6. After changing CSS or components: `compare-visual-state` `{ "url": "…", "name": "checkout" }`.
-7. Re-run **only what failed** with `run-test` `{ "lastFailed": true }` until green.
+   and `analyze-history` `{ "view": "commits" }` to see where it went bad.
+6. Re-run **only what failed** with `run-test` `{ "lastFailed": true }` until green.
 
-To write a new test, find the locators with `inspect-page` `{ "view": "locators" }`, then call
-`generate-e2e-test` with a `description` and the `steps` of the flow; it walks them on the live
-page, writes the spec and runs it once. To check a page's speed or accessibility, use
-`audit-performance` and `audit-accessibility`.
+To write a new test, call `generate-e2e-test` with a `description` and the `steps` of the flow;
+it walks them on the live page, writes the spec and runs it once.
 
 </details>
 
-## CI: GitHub Action and `ci` command
+## 🤖 CI: GitHub Action, GitLab and any CI
 
-The same diagnosis runs without an agent. `playwright-e2e-mcp ci` runs the
-suite (auto-retry once, so flaky tests are reported as flaky, not failed),
-optionally drafts `suggest-fix` diffs and a flaky verdict for the failures, and
-writes one Markdown report to stdout, to `--output`, and to the GitHub job
-summary when `GITHUB_STEP_SUMMARY` is set. Exit code `0` passed, `1` tests
-failed, `2` the run itself failed.
-
-```bash
-npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --output report.md
-npx -y playwright-e2e-mcp ci --help
-```
-
-As a GitHub Action, it adds the report to the job summary and keeps one PR
-comment up to date when the run fails. On a pull request it also re-runs each
-failing test with its suggested fix and posts the fixes that pass as **suggested
-changes** on the failing lines, so a reviewer applies one with the **Commit
-suggestion** button (only on lines the PR changed; the rest stay in the report):
+The same diagnosis runs without an agent. On a pull request the Action re-runs each failing test
+with its suggested fix and posts the fixes that pass as **suggested changes** on the failing
+lines, so a reviewer applies one with the **Commit suggestion** button:
 
 ```yaml
 permissions:
@@ -513,35 +396,62 @@ steps:
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
-      # args: --browser chromium tests/checkout
+      # guard: true      # fail the job if a test was made to pass by checking less
 ```
 
-A complete, ready-to-copy workflow is available in [`examples/github-actions/playwright-e2e.yml`](examples/github-actions/playwright-e2e.yml), including artifact upload and commented options for `guard: true` and a shared history server.
+- **Ready-to-copy workflows:** [GitHub Actions](examples/github-actions/playwright-e2e.yml)
+  (artifact upload, heal guard, history server) and [GitLab CI](examples/gitlab-ci/playwright-e2e.yml)
+  (heal guard on merge requests and a merge request comment).
+- **Any other CI** (Jenkins, CircleCI, AWS CodeBuild): `npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --output report.md`.
+  Exit code `0` passed, `1` tests failed, `2` the run itself failed. Quarantined, unexpired
+  failures don't fail it.
+- **Heal guard without the Action:** `npx -y playwright-e2e-mcp guard --base origin/main`
+  (exit 1 on BLOCK; `--strict` fails on warnings too).
+- **Team history across machines:** run the free [history server](history-server/README.md) and
+  give the Action `history-url` and `history-token`; every CI run lands in one history that
+  `analyze-history` on your laptop and the server's dashboard both read.
 
-**GitLab CI:** [`examples/gitlab-ci/playwright-e2e.yml`](examples/gitlab-ci/playwright-e2e.yml) runs the heal guard on merge requests, the same `ci` diagnosis, and posts the report as a merge request comment when you give it a project access token. Any other CI (Jenkins, CircleCI, AWS CodeBuild) works the same way: run `npx -y playwright-e2e-mcp ci --output e2e-report.md` and keep the file.
+Action inputs: `project-root`, `args`, `flaky-runs`, `suggest`, `comment`, `review`,
+`verify-fixes`, `guard`, `history-token`, `history-url`, `fail-on-failure`, `version`,
+`github-token`. Outputs: `exit-code`, `report`, `guard`.
 
-**Team history across machines (free, self-hosted):** CI runs normally stay on the CI machine.
-Run the [history server](history-server/README.md) from this repo (one `docker run`, or a free
-Vercel, Azure or any Node host), give the Action `history-url` and `history-token`, and every
-CI run lands in one history that `analyze-history` on your laptop and the server's dashboard
-both read. No account, no billing; you hand out the tokens.
+## 🐍 Python projects (pytest-playwright)
 
-Inputs: `project-root`, `args`, `flaky-runs`, `suggest`, `comment`, `review`,
-`verify-fixes`, `guard`, `history-token`, `history-url`, `fail-on-failure`, `version`, `github-token`. Outputs: `exit-code`,
-`report`, `guard`.
+When the project has no Node Playwright but has pytest settings (`pytest.ini`, `pyproject.toml`,
+`setup.cfg`, `tox.ini`) or a `conftest.py`, the tools run `python -m pytest` instead.
 
-Quarantined tests (`playwright-quarantine.json`, see [`quarantine`](docs/tools.md#quarantine))
-are honoured here too: when every failure is quarantined and unexpired, `ci` exits `0` and the
-report lists them.
+<details>
+<summary><b>What works for Python</b></summary>
 
-**Heal guard in CI.** `guard: true` checks the PR's changed tests against the base branch first
-and fails the job if a test was made to pass by checking less. Without the Action:
+- **`run-test`** runs the suite, a file, `tests/test_cart.py::TestCart::test_add` or
+  `tests/test_cart.py:42` (the test at that line). `grep` becomes `-k`, `browser` becomes
+  `--browser`, `retries` uses pytest-rerunfailures. Failures that finished are kept even when
+  the run is killed.
+- **`get-failure`** shows the message, the code frame, expected vs actual and, from the trace
+  pytest-playwright keeps (`--tracing retain-on-failure` is added for you), the failed action,
+  the DOM at failure, network and console.
+- **`list-tests`**, **`analyze-history`**, **`quarantine`** and the **`ci`** command work as for Node.
+- Not yet for Python: **`suggest-fix`** points at the DOM at failure but does not patch `.py`
+  files, **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`**,
+  **`check-test-change`** and **`generate-e2e-test`** read and write TypeScript/JavaScript specs
+  only. The page tools launch the browser with Node Playwright, so they need `@playwright/test`
+  installed in the project.
+
+Results come from a small pytest plugin the server loads with `-p` from its temp folder; nothing
+is installed in your project. It uses your Python: `PW_MCP_PYTHON`, else `.venv`, `venv` or `env`
+in the project, else `python3` / `python`.
 
 ```bash
-npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict fails on warnings too
+pip install pytest-playwright && playwright install chromium
 ```
 
-## Configuration
+</details>
+
+## ⚙️ Configuration
+
+**Pick your tools.** `--tools=` (or `PW_MCP_TOOLS`) takes profiles and tool names:
+`auto` (core loop plus `load-tools`, about 2.4k tokens), `core` (the seven-tool fix loop, about
+2.3k), `triage`, `inspect`, `author`, or all nineteen (about 11.5k, the default).
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -561,7 +471,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |
-| `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` | — | Optional: your team's [history server](history-server/README.md) (free, self-hosted) and a token from it. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `history-url` / `history-token` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere. The 0.7/0.8 names `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` still work |
+| `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` | — | Optional: your team's [history server](history-server/README.md) (free, self-hosted) and a token from it. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `history-url` / `history-token` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere. The older names `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` still work |
 | `PW_MCP_HISTORY` | on | `0` stops recording runs to `.playwright-e2e-mcp/history.jsonl` |
 | `PW_MCP_ALLOWED_ROOTS` | — | Extra directories a caller may pass as `projectRoot` (`:`-separated, `;` on Windows). Anything outside these and the default root is rejected |
 | `PW_MCP_HTTP_TOKEN` | — | HTTP bridge only: bearer token that unlocks all tools: 16+ characters, 32+ recommended (see [Hosted endpoint](docs/hosted-endpoint.md)) |
@@ -575,25 +485,20 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_BLOCK_PRIVATE_URLS` | off (on for the HTTP bridge) | `1` makes the URL tools refuse loopback, private-network and cloud-metadata addresses, including redirects and subresources |
 | `PW_MCP_SERVERLESS_CHROMIUM` | on for Vercel | Launch the page tools on the bundled serverless Chromium (`@sparticuz/chromium`, Linux x64, Node 22+); `0` turns it off, `1` turns it on elsewhere |
 | `LOG_LEVEL` / `MCP_LOG_LEVEL` | `info` | `debug` \| `info` \| `warn` \| `error` \| `silent`; `LOG_LEVEL` wins when both are set |
-| `LOG_FORMAT` / `MCP_LOG_FORMAT` | `text` | `text`, or `json` (also `ndjson`) for one structured JSON object per line — ready for a log ingester |
+| `LOG_FORMAT` / `MCP_LOG_FORMAT` | `text` | `text`, or `json` (also `ndjson`) for one structured JSON object per line, ready for a log ingester |
 
-Logs always go to **stderr** — stdout is reserved for the MCP protocol. Unrecognized values
+Logs always go to **stderr**; stdout is reserved for the MCP protocol. Unrecognized values
 fall back to the default, so a typo in `LOG_LEVEL` logs at `info` and one in `LOG_FORMAT`
-logs as text rather than silencing the server. With `LOG_FORMAT=json` each line is a single
-object (`time`, `level`, `message` plus context):
-
-```json
-{"time":"2026-10-07T08:00:00.000Z","level":"info","message":"server ready","name":"playwright-e2e-mcp"}
-```
+logs as text rather than silencing the server.
 
 </details>
 
-## Benchmark
+## 📊 Benchmark
 
-[`bench/token-benchmark.mjs`](bench/token-benchmark.mjs) breaks a checkout button's test id
-on a storefront page and fixes it two ways: with this server (`run-test` → `suggest-fix` →
-apply) and with Playwright MCP plus a shell (`playwright test`, `browser_navigate` +
-`browser_snapshot`, edit, re-run). Latest result ([full output](bench/RESULTS.md)):
+[`bench/token-benchmark.mjs`](bench/token-benchmark.mjs) breaks a checkout button's test id on a
+storefront page and fixes it two ways: with this server (`run-test` → `suggest-fix` → apply) and
+with Playwright MCP plus a shell (`playwright test`, `browser_navigate` + `browser_snapshot`, edit,
+re-run). Latest result ([full output](bench/RESULTS.md)):
 
 | Step | playwright-e2e-mcp (`core` tools) | playwright-e2e-mcp (all tools) | Playwright MCP + shell |
 | --- | ---: | ---: | ---: |
@@ -601,51 +506,76 @@ apply) and with Playwright MCP plus a shell (`playwright test`, `browser_navigat
 | Run the failing test | 257 | 257 | 323 |
 | Find the element / propose the fix | 232 | 232 | 2,286 |
 | Apply + verify (re-run) | 230 | 230 | 34 |
-| **Total for one fix** | 2,985 | 12,199 | 7,201 |
+| **Total for one fix** | **2,985** | 12,199 | 7,201 |
 
 | Looking at the storefront page | Tokens |
 | --- | ---: |
-| `inspect-page` (default: locator map) | 571 |
+| `inspect-page` (default: locator map) | **571** |
 | Playwright MCP `browser_navigate` + `browser_snapshot` | 2,286 |
 
-Tokens are characters ÷ 4. Tool definitions count what the model reads: each tool's name,
-description and input schema. The full `tools/list` also carries output schemas, which clients
-keep for themselves (about 16k for all tools). The work itself (run, diagnose, fix, verify)
-takes about 700 tokens here versus about 2,600 with Playwright MCP, but tool definitions are
-sent with every request: with all 19 tools loaded they outweigh that saving, so set
-`PW_MCP_TOOLS=core` (or another profile) when you only fix failing tests, or `PW_MCP_TOOLS=auto`
-to start with the core loop (2,427 tokens) and load more tools on request. The Playwright MCP
-route is a lower bound: it assumes the agent picks the right locator from the snapshot on the
-first try, which the server does for it here. Run 2026-11-01 with Playwright 1.64.1; re-run with
+Tokens are characters ÷ 4 and count what the model reads (each tool's name, description and input
+schema). Tool definitions are sent with every request, so with all 19 tools loaded they outweigh
+the saving on the work itself: use `--tools=core` when you only fix failing tests, or
+`--tools=auto` to start at 2,427 tokens and load more on request. The Playwright MCP route is a
+lower bound: it assumes the agent picks the right locator from the snapshot on the first try,
+which the server does for it here. Run 2026-11-01 with Playwright 1.64.1; re-run with
 `npm run build && node bench/token-benchmark.mjs`.
 
-## Demo
+<details>
+<summary><b>A real run-test result</b></summary>
 
 A real `run-test` call served over stdio by `npx -y playwright-e2e-mcp` against the bundled
 `examples/sample-test.spec.ts` (actual output, unedited):
 
 ![run-test result: 4 passed, 0 failed, 5.1s](https://raw.githubusercontent.com/xsignon-secure/E2E/main/docs/demo-run-test.png)
 
-## Free and open source
+</details>
 
-- **MIT licensed.** Use it, change it, ship it in commercial work; no fees, no paid tier, no feature held back. That includes the [team history server](history-server/README.md) that collects CI runs from every machine: it is in this repo, and you host it yourself for free.
+## 🤝 Works alongside your browser MCP
+
+Microsoft's Playwright MCP, Chrome DevTools MCP and similar servers are great for driving a page
+step by step. This server doesn't replace them or Playwright's own Test Agents in VS Code. Use a
+browser MCP to explore, and this one to run, diagnose and fix the suite, with fixes that are
+verified, a guard against fixes that cheat, flaky verdicts with evidence and the commit that broke
+a test.
+
+## 💚 Free and open source
+
+- **MIT licensed.** Use it, change it, ship it in commercial work. No paid tier, no feature held
+  back, including the [team history server](history-server/README.md), which you host yourself.
 - **No account, no API key, no sign-up.** `npx -y playwright-e2e-mcp init` is the whole setup.
-- **No telemetry.** It never phones home; your tests, traces and run history stay on your machine unless you point it at your own history server and upload them. The only other request is `doctor` asking npm for the latest version number when you run it (`--offline` or `PW_MCP_NO_UPDATE_CHECK=1` skips it).
-- **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and the Playwright your project already has (Apache-2.0).
-- **Free to host yourself**, too: the HTTP bridge deploys to a free Vercel account (see [Hosted endpoint](docs/hosted-endpoint.md)).
+- **No telemetry.** It never phones home. Your tests, traces and run history stay on your machine
+  unless you point it at your own history server. The only other request is `doctor` asking npm
+  for the latest version number when you run it (`--offline` skips it).
+- **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and the
+  Playwright your project already has (Apache-2.0).
 
-**What it does not do:** it doesn't drive an exploratory browsing session step by step, and it
-doesn't replace Playwright's own Test Agents inside VS Code. Use Playwright MCP for interactive
-browsing and this server for running, diagnosing and fixing the suite. They work side by side.
+## 🆕 Recent releases
 
-## More documentation
+- **0.11:** compact `inspect-page` (571 tokens instead of 3,600), `--tools=auto` to load tools on
+  request, smaller tool definitions.
+- **0.10:** asks before changing your files, interactive test report in MCP Apps clients, Client
+  ID Metadata Document sign-in for the hosted endpoint.
+- **0.9:** the team history server is free, self-hosted and in this repo.
+- **0.8:** pytest-playwright suites, popups and new tabs, `blockWrites`, MCP 2026-07-28, update check in `doctor`.
+- **0.7:** saved logins with 2FA, heal guard, flaky-test quarantine.
+
+[All release notes](https://github.com/xsignon-secure/E2E/releases)
+
+## 📚 More documentation
 
 - [Tool reference](docs/tools.md): every argument, example outputs, edge cases handled
 - [Hosted endpoint](docs/hosted-endpoint.md): the HTTP bridge for ChatGPT and claude.ai connectors
+- [History server](history-server/README.md): shared CI run history with a dashboard, self-hosted
 - [Architecture](ARCHITECTURE.md): how the server is built and the design decisions behind it
 - [Security](SECURITY.md): the security model and how to report a vulnerability
 - [Development](docs/development.md): building, tests, Docker, signing and releasing
-- [Contributing](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md)
+
+## 🙌 Contributing
+
+Issues, ideas and pull requests are welcome. Start with a
+[good first issue](https://github.com/xsignon-secure/E2E/labels/good%20first%20issue), read
+[CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
