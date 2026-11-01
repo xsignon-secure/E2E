@@ -16,6 +16,7 @@ import type { ToolContext, ToolResponse, ToolStore } from './types/index.js';
 import { toPlaywrightMcpError } from './types/index.js';
 import { logger } from './utils/logger.js';
 import { killActiveChildren } from './utils/playwright-runner.js';
+import { ConfirmationPending, createConfirmWrite } from './utils/confirm.js';
 import { createToolStore, toolError } from './tools/shared.js';
 import { runTestTool } from './tools/run-test.js';
 import { getFailureTool } from './tools/get-failure.js';
@@ -498,6 +499,13 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
           store,
           projectRoot,
           restricted: options.restricted === true,
+          // Ask the person before writing (MCP elicitation), when the client can.
+          confirmWrite: createConfirmWrite({
+            tool: tool.name,
+            inputResponses: reqCtx.mcpReq.inputResponses,
+            envelope: reqCtx.mcpReq.envelope as Record<string, unknown> | undefined,
+            sessionCapabilities: server.server.getClientCapabilities(),
+          }),
         };
         try {
           const given = (args ?? {}) as Record<string, unknown>;
@@ -506,6 +514,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
           const known = Object.fromEntries(Object.entries(given).filter(([key]) => input.known!.has(key)));
           return noteIgnoredArguments(await tool.handler(known as never, ctx), ignored, input.known!);
         } catch (err) {
+          // The person has to confirm a file change: hand the question back.
+          if (err instanceof ConfirmationPending) return err.result;
           // Backstop: tools already convert their own errors via guard().
           const error = toPlaywrightMcpError(err);
           ctx.logger.error('tool threw unexpectedly', { error, kind: error.kind });

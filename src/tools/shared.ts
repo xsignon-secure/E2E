@@ -21,6 +21,8 @@ import type {
   ToolStore,
 } from '../types/index.js';
 import { PlaywrightMcpError, toPlaywrightMcpError } from '../types/index.js';
+import { ConfirmationPending } from '../utils/confirm.js';
+import type { ConfirmOutcome } from '../utils/confirm.js';
 import {
   assertRealPathInside,
   isPathInside,
@@ -86,9 +88,24 @@ export async function guard(label: string, fn: () => Promise<ToolResponse>): Pro
   try {
     return await fn();
   } catch (err) {
+    // Not a failure: the person has to confirm a file change first.
+    if (err instanceof ConfirmationPending) throw err;
     const error = toPlaywrightMcpError(err);
     return toolError(error.kind, `**${label}** failed: ${error.message}`, error.hint, error.details);
   }
+}
+
+/**
+ * Ask before a write (ctx.confirmWrite), or 'not-asked' when the context has
+ * no confirmer. Returns the outcome; throws ConfirmationPending to ask.
+ */
+export async function confirmBeforeWrite(ctx: ToolContext, title: string, detail: string): Promise<ConfirmOutcome> {
+  return ctx.confirmWrite ? ctx.confirmWrite({ title, detail }) : 'not-asked';
+}
+
+/** The result for a change the person said no to: nothing was written. */
+export function declinedResult(what: string, data: Omit<StructuredResult, 'ok'> & { ok?: boolean } = {}): ToolResponse {
+  return toolText(`## ✋ Not changed\n\nYou declined: ${what}. Nothing was written.`, { ...data, declined: true });
 }
 
 /* ------------------------------------------------------------------ */

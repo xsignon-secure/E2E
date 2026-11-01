@@ -128,6 +128,8 @@ export const toolOutputSchema = z.object({
   matches: z.number().int().optional().describe('elements matched; actions need exactly 1'),
   locator: z.string().optional().describe('a verified unique locator for the first match'),
   httpStatus: z.number().int().optional().describe("the page's HTTP status"),
+  // tools that change files: the person said no, so nothing was written
+  declined: z.boolean().optional().describe('the person declined the change; nothing was written'),
   // save-login
   path: z.string().optional().describe('save-login: the storageState file, relative to the project'),
   expiresAt: z.string().optional().describe('save-login: when the first session cookie expires (ISO)'),
@@ -175,7 +177,7 @@ const TOOL_FIELDS: Readonly<Record<string, ReadonlyArray<keyof StructuredResult>
   'get-failure': ['failure', 'index', 'total'],
   'list-tests': ['tests', 'total', 'truncated'],
   'diagnose-flaky': ['verdict', 'tests'],
-  'suggest-fix': ['fix', 'applied', 'verified'],
+  'suggest-fix': ['fix', 'applied', 'verified', 'declined'],
   'audit-accessibility': ['url', 'violations'],
   'audit-performance': ['url', 'metrics'],
   'audit-tests': ['findings', 'total', 'truncated', 'applied', 'verified'],
@@ -183,7 +185,7 @@ const TOOL_FIELDS: Readonly<Record<string, ReadonlyArray<keyof StructuredResult>
   'validate-selector': ['url', 'valid', 'matches', 'locator', 'httpStatus'],
   'save-login': ['status', 'valid', 'path', 'url', 'expiresAt'],
   'check-test-change': ['status', 'findings', 'total'],
-  quarantine: ['status', 'total'],
+  quarantine: ['status', 'total', 'declined'],
 };
 
 /**

@@ -27,6 +27,8 @@ import {
   resolveConfigSelection,
   resolveProjectRoot,
   toolText,
+  confirmBeforeWrite,
+  declinedResult,
 } from './shared.js';
 
 const MAX_FILE_BYTES = 1_000_000;
@@ -196,22 +198,38 @@ export const auditTestsTool = {
       const out = [markdown, '', '## 🔧 Fixes'];
       const touched = new Map<string, string>();
       const applied: FlakeFinding[] = [];
+      const planned: Array<{ file: string; full: string; original: string; source: string; applied: FlakeFinding[] }> = [];
       for (const risk of risks) {
         const original = sources.get(risk.file);
         if (original === undefined) continue;
         const result = applyFlakeFixes(original, risk.findings);
         if (result.applied.length === 0) continue;
-        const full = joinProjectPath(root, risk.file);
-        if ((await readFile(toNativePath(full), 'utf8')) !== original) continue;
-        await writeFileInsideRoot(full, result.source, root);
-        touched.set(risk.file, original);
-        applied.push(...result.applied);
+        planned.push({ file: risk.file, full: joinProjectPath(root, risk.file), original, source: result.source, applied: result.applied });
+      }
+      let confirmed: Awaited<ReturnType<typeof confirmBeforeWrite>> = 'not-asked';
+      if (planned.length > 0) {
+        const count = planned.reduce((sum, plan) => sum + plan.applied.length, 0);
+        const detail = planned
+          .flatMap((plan) => {
+            const before = plan.original.split(/\r?\n/);
+            return plan.applied.map((finding) => `${plan.file}:${finding.line}\n- ${(before[finding.line - 1] ?? '').trim()}\n+ ${(finding.fix ?? '').trim()}`);
+          })
+          .join('\n\n');
+        confirmed = await confirmBeforeWrite(ctx, `Apply ${count} flake fix${count === 1 ? '' : 'es'} in ${planned.length} file${planned.length === 1 ? '' : 's'}?`, detail);
+        if (confirmed === 'declined') return declinedResult('the flake fixes', { ...data, applied: false });
+      }
+      for (const plan of planned) {
+        if ((await readFile(toNativePath(plan.full), 'utf8')) !== plan.original) continue;
+        await writeFileInsideRoot(plan.full, plan.source, root);
+        touched.set(plan.file, plan.original);
+        applied.push(...plan.applied);
       }
       if (applied.length === 0) {
         out.push('', 'Nothing to fix mechanically: the findings above need a judgement call (what to wait for instead).');
         return toolText(out.join('\n'), { ...data, applied: false });
       }
       out.push('', `Applied ${applied.length} fix${applied.length === 1 ? '' : 'es'} in ${touched.size} file${touched.size === 1 ? '' : 's'}: ${[...touched.keys()].map((f) => `\`${f}\``).join(', ')}.`);
+      if (confirmed === 'approved') out.push('', '> ✅ You confirmed these changes.');
 
       const restore = async (): Promise<void> => {
         for (const [file, original] of touched) await writeFileInsideRoot(joinProjectPath(root, file), original, root);
