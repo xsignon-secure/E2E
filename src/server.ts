@@ -18,6 +18,7 @@ import { logger } from './utils/logger.js';
 import { killActiveChildren } from './utils/playwright-runner.js';
 import { ConfirmationPending, createConfirmWrite } from './utils/confirm.js';
 import { createToolStore, toolError } from './tools/shared.js';
+import { appMetaFor, registerApps } from './apps/index.js';
 import { runTestTool } from './tools/run-test.js';
 import { getFailureTool } from './tools/get-failure.js';
 import { inspectPageTool } from './tools/inspect-page.js';
@@ -470,6 +471,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
         // it costs context on every request, so PW_MCP_OUTPUT_SCHEMAS=0 drops it.
         ...(process.env.PW_MCP_OUTPUT_SCHEMAS !== '0' && outputSchemaFor(tool.name) ? { outputSchema: outputSchemaFor(tool.name) } : {}),
         annotations: tool.annotations,
+        // MCP Apps hosts show the interactive test report next to the result.
+        ...(appMetaFor(tool.name) ? { _meta: appMetaFor(tool.name) } : {}),
       },
       async (args: unknown, reqCtx: ServerContext) => {
         const progressToken = reqCtx.mcpReq._meta?.progressToken;
@@ -526,6 +529,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   }
 
   if (!options.tools) registerPrompts(server);
+  // The interactive test report view (MCP Apps).
+  if (enabled.some((tool) => appMetaFor(tool.name))) registerApps(server);
   // The playbook for these tools, over the Skills extension (SEP-2640).
   attachBundledSkill(server);
 
