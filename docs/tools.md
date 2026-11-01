@@ -84,10 +84,12 @@ screen, the response says so and suggests `storageState`.
 
 ## `run-test`
 
+In a Python project (pytest-playwright, no Node Playwright) the same arguments run `python -m pytest`: `grep` becomes `-k`, `browser` becomes `--browser`, `retries` needs pytest-rerunfailures, and `args` accepts `-x`, `--maxfail=N`, `--headed`, `--slowmo=MS`, `--browser-channel=…`, `--device=…`, `-m=EXPR`, `--reruns=N` and `-n=N`. See [Python projects](../README.md#python-projects-pytest-playwright).
+
 | Argument | Type | Description |
 | --- | --- | --- |
 | `projectRoot` | string | Project directory inside the configured root (default: server working directory) |
-| `testFiles` | string[] | Files/directories relative to the root; `file:line` supported. Omit to run everything |
+| `testFiles` | string[] | Files/directories relative to the root; `file:line` supported (and pytest node ids such as `tests/test_cart.py::test_add` in a Python project). Omit to run everything |
 | `grep` | string | Only run tests whose title matches this regex |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Playwright project to run (matched against config project names) |
 | `headed` | boolean | Visible browser window |

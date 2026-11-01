@@ -212,8 +212,21 @@ export function resolveConfigSelection(
 }
 
 /** Validate a user-supplied test path (supports the `file:line` suffix). */
+/** A pytest node id's `::name` part (`tests/test_cart.py::TestCart::test_add[chromium]`). */
+function splitNodeId(argument: string): [string, string] {
+  const match = /^(.+?\.py)(::.+)$/.exec(argument);
+  return match ? [match[1], match[2]] : [argument, ''];
+}
+
 export function sanitizeTestPathArgument(input: string, root: string): string {
-  const trimmed = input.trim();
+  const [base, nodeSuffix] = splitNodeId(input.trim());
+  if (nodeSuffix) {
+    if (/[\x00-\x1f]/.test(nodeSuffix) || nodeSuffix.length > 500) {
+      throw new PlaywrightMcpError(`Invalid pytest node id "${input}"`, 'INVALID_PATH');
+    }
+    return `${sanitizeUserPath(base, root)}${nodeSuffix}`;
+  }
+  const trimmed = base;
   const lineMatch = /:(\d+)$/.exec(trimmed);
   const pathPart = lineMatch ? trimmed.slice(0, -lineMatch[0].length) : trimmed;
   const suffix = lineMatch ? lineMatch[0] : '';
@@ -223,8 +236,9 @@ export function sanitizeTestPathArgument(input: string, root: string): string {
 
 /** True when the path portion of a `file:line` argument exists. */
 export async function testPathExists(argument: string, root: string): Promise<boolean> {
-  const lineMatch = /:(\d+)$/.exec(argument);
-  const pathPart = lineMatch ? argument.slice(0, -lineMatch[0].length) : argument;
+  const [base] = splitNodeId(argument);
+  const lineMatch = /:(\d+)$/.exec(base);
+  const pathPart = lineMatch ? base.slice(0, -lineMatch[0].length) : base;
   try {
     await stat(resolvePath(root, pathPart));
     return true;

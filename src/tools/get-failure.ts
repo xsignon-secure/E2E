@@ -44,7 +44,11 @@ function nextSteps(failure: TestFailure, index: number): string[] {
   }
   if (failure.failureKind === 'assertion' || failure.failureKind === 'timeout') {
     if (location) {
-      steps.push(`Single-step with Playwright UI mode: \`run-test\` with \`args: ["--headed", "--debug"]\` on \`${location}\`.`);
+      steps.push(
+        failure.file.endsWith('.py')
+          ? `Watch it run: \`run-test\` with \`args: ["--headed", "--slowmo=500"]\` on \`${location}\` (or run pytest yourself with \`PWDEBUG=1\` to step through it in the Playwright Inspector).`
+          : `Single-step with Playwright UI mode: \`run-test\` with \`args: ["--headed", "--debug"]\` on \`${location}\`.`,
+      );
     }
   }
   if (/locator|selector|resolved to|waiting for/i.test(failure.message)) {

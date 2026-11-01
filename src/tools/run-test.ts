@@ -10,6 +10,7 @@ import { PlaywrightMcpError } from '../types/index.js';
 import type { RunTestOptions, RunTestResult, TestFailure, ToolContext, ToolResponse } from '../types/index.js';
 import { detectProject, missingPlaywrightMessage } from '../utils/project-detector.js';
 import { runTests } from '../utils/playwright-runner.js';
+import { detectPytestProject } from '../utils/pytest-runner.js';
 import { normalizePath, relativeToRoot } from '../utils/path-utils.js';
 import { recordRun } from '../utils/run-history.js';
 import { startBackgroundRun } from '../utils/run-registry.js';
@@ -250,7 +251,7 @@ export const runTestTool = {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       const detection = await detectProject(root);
 
-      if (!detection.hasPlaywright) {
+      if (!detection.hasPlaywright && !(await detectPytestProject(root))) {
         const { message, hint } = missingPlaywrightMessage(detection);
         return toolError('NO_PLAYWRIGHT', message, hint);
       }

@@ -28,6 +28,7 @@ import type {
 } from '../types/index.js';
 import { detectProject, missingPlaywrightMessage } from '../utils/project-detector.js';
 import { runTests } from '../utils/playwright-runner.js';
+import { detectPytestProject } from '../utils/pytest-runner.js';
 import { relativeToRoot } from '../utils/path-utils.js';
 import { recordRun } from '../utils/run-history.js';
 import { classifyFailure } from '../utils/report-parser.js';
@@ -40,6 +41,7 @@ import {
   resolveProjectRoot,
   sanitizeTestPathArgument,
   testPathExists,
+  toolError,
   toolText,
 } from './shared.js';
 
@@ -707,6 +709,13 @@ export const diagnoseFlakyTool = {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       const detection = await detectProject(root);
 
+      if (!detection.hasPlaywright && (await detectPytestProject(root))) {
+        return toolError(
+          'INVALID_INPUT',
+          'diagnose-flaky does not support pytest projects yet',
+          'Re-run the test a few times with run-test (or pytest-repeat: `--count 5`) and compare the outcomes; analyze-history ranks flaky tests from those runs.',
+        );
+      }
       if (!detection.hasPlaywright) {
         const { message, hint } = missingPlaywrightMessage(detection);
         return toolText([`## Flaky diagnosis unavailable`, '', `**Error:** ${message}`, '', `> ${hint}`].join('\n'), {
