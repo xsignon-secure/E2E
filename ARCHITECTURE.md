@@ -139,6 +139,17 @@ its old self and blocks those changes.
 | MCP tasks for long runs | Waiting for SDK support. Tasks are an optional extension in the 2026 spec; progress, cancel and background runs cover the need today. |
 | A hosted, stateless history store | The local file stays the default. The optional Pro service is the hosted variant. |
 
+## 7. Python projects behind the same tools
+
+A project with no Node Playwright but a pytest configuration (`pytest.ini`, `[tool.pytest…]`,
+`conftest.py`, …) is run with `python -m pytest` (`src/utils/pytest-runner.ts`). Results come
+from a small plugin the server writes to its temp folder and loads with `-p`, so nothing is
+installed in the project; it writes one line per finished test, which keeps killed runs useful
+in the same way as the Node live reporter. The result has the same shape as a Node run, so
+`get-failure` reads pytest-playwright's traces with the same trace reader. Patching Python
+specs, flaky diagnosis and the heal guard are still Node only.
+
 ## Roadmap
 
-- Python projects (`pytest-playwright`): run, diagnose and list tests through the same tools.
+- Python: locator fixes for `.py` specs (`suggest-fix`), flaky diagnosis through pytest-repeat,
+  and heal-guard rules for pytest files.

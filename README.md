@@ -113,7 +113,8 @@ keeps your suite green.
 ## Requirements
 
 - Node.js 22 or newer
-- A project that uses `@playwright/test`, with a browser installed (`npx playwright install chromium`)
+- A project that uses `@playwright/test`, with a browser installed (`npx playwright install chromium`),
+  or a Python project that uses `pytest-playwright` ([see below](#python-projects-pytest-playwright))
 - Claude Code, Claude Desktop, Cursor, VS Code, Windsurf, Codex, Gemini CLI or any other MCP client
 
 ## Getting started
@@ -286,6 +287,34 @@ Run my Playwright tests and fix whatever fails.
 Your agent should run the suite, read the failure, and propose a fix it has re-run. To check the
 setup without your own tests, ask it to run `examples/sample-test.spec.ts` from this repo.
 
+## Python projects (pytest-playwright)
+
+The same server works on Python suites. When the project has no Node Playwright but has a
+`pytest.ini`, a `[tool.pytest…]` table in `pyproject.toml`, `setup.cfg` / `tox.ini` pytest
+settings or a `conftest.py`, the tools run `python -m pytest` instead:
+
+- **`run-test`** runs the suite, a file, `tests/test_cart.py::TestCart::test_add` or
+  `tests/test_cart.py:42` (the test at that line). `grep` becomes `-k`, `browser` becomes
+  `--browser`, `retries` uses pytest-rerunfailures. Failures that finished are kept even when
+  the run is killed.
+- **`get-failure`** shows the message, the code frame, expected vs actual and, from the trace
+  pytest-playwright keeps (`--tracing retain-on-failure` is added for you), the failed action,
+  the DOM at failure, network and console.
+- **`list-tests`**, **`analyze-history`**, **`quarantine`** and the **`ci`** command work as for Node.
+- Not yet for Python: **`suggest-fix`** points at the DOM at failure but does not patch `.py`
+  files, **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`**,
+  **`check-test-change`** and **`generate-e2e-test`** read and write TypeScript/JavaScript specs
+  only. The page tools (`inspect-page`, `validate-selector`, …) launch the browser with Node
+  Playwright, so they need `@playwright/test` installed in the project.
+
+Results come from a small pytest plugin the server loads with `-p` from its temp folder; nothing
+is installed in your project. It uses your Python: `PW_MCP_PYTHON`, else `.venv`, `venv` or `env`
+in the project, else `python3` / `python`.
+
+```bash
+pip install pytest-playwright && playwright install chromium
+```
+
 ## What's new in 0.7
 
 - **Log in once, safely:** `save-login` signs in (2FA codes included) with secrets read from the
@@ -442,6 +471,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
 | `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
+| `PW_MCP_PYTHON` | project venv, then `python3` | The Python that runs a pytest-playwright suite |
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |

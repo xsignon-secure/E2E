@@ -47,6 +47,7 @@ import {
   toNativePath,
 } from './path-utils.js';
 import { logger } from './logger.js';
+import { detectPytestProject, runPytest } from './pytest-runner.js';
 import { ATTEMPTS_FILE_ENV, attemptsReporterPath, parseAttempts } from './attempts-reporter.js';
 import { LIVE_RESULTS_FILE_ENV, liveReporterPath, liveResultsToReport } from './live-reporter.js';
 
@@ -552,6 +553,8 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
 
   const cli = await resolvePlaywrightCli(root);
   if (cli === null) {
+    // A Python project: same tools, pytest-playwright underneath.
+    if (await detectPytestProject(root)) return runPytest(options);
     const detection = await detectProject(root);
     const { message, hint } = missingPlaywrightMessage(detection);
     throw new PlaywrightMcpError(message, 'NO_PLAYWRIGHT', { hint });

@@ -464,7 +464,7 @@ export interface ListTestsResult {
   total: number;
   truncated: boolean;
   testDir: string | null;
-  source: 'playwright-list' | 'file-scan';
+  source: 'playwright-list' | 'pytest-collect' | 'file-scan';
   /** Why Playwright could not list tests, when the fallback scan was used. */
   error?: { kind: ErrorKind; message: string; hint?: string };
 }

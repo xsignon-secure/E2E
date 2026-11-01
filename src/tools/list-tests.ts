@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { DiscoveredTest, ListTestsResult, ToolContext, ToolResponse } from '../types/index.js';
 import { detectProject } from '../utils/project-detector.js';
 import { listTests } from '../utils/playwright-runner.js';
+import { detectPytestProject, listPytestTests } from '../utils/pytest-runner.js';
 import { isPathInside, normalizePath, sanitizeUserPath, relativeToRoot } from '../utils/path-utils.js';
 import {
   guard,
@@ -33,7 +34,7 @@ export const listTestsSchema = listTestsInput;
 function renderTests(result: ListTestsResult, root: string): string {
   const lines: string[] = [];
   const sourceLabel =
-    result.source === 'playwright-list' ? 'Playwright `--list`' : 'source scan (best effort)';
+    result.source === 'playwright-list' ? 'Playwright `--list`' : result.source === 'pytest-collect' ? 'pytest `--collect-only`' : 'source scan (best effort)';
   lines.push(`## 📋 ${result.total} test${result.total === 1 ? '' : 's'} found`, '');
   lines.push(`**Source:** ${sourceLabel}`);
   if (result.testDir) lines.push(`**testDir:** \`${relativeToRoot(root, result.testDir)}\``);
@@ -101,7 +102,10 @@ export const listTestsTool = {
         testDir = null;
       }
 
-      const result = await listTests({
+      const pytest = !detection.hasPlaywright && configPath === undefined ? await detectPytestProject(root) : null;
+      const result = pytest
+        ? await listPytestTests({ projectRoot: root, filter: args.filter, limit: args.limit, signal: ctx.signal, noSpawn: ctx.restricted === true })
+        : await listTests({
         projectRoot: root,
         configPath,
         testDir,

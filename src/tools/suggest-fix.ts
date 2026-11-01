@@ -449,6 +449,12 @@ export const suggestFixTool = {
       const failure = failures[index - 1];
       const out = renderHeader(failure, index, failures.length);
 
+      if (failure.file?.endsWith('.py')) {
+        out.push(
+          'Automatic patches are written for TypeScript and JavaScript specs only, so this Python test is not patched. Use **get-failure** for the DOM at failure, then **inspect-page** or **validate-selector** to find the element and write the Python locator (`page.get_by_role("button", name="…")`) by hand.',
+        );
+        return toolText(out.join('\n'));
+      }
       if (!failure.file || !isTestFile(failure.file)) {
         out.push('No spec file is attached to this failure (it is a configuration or global error), so there is nothing to patch. Use **get-failure** for the details.');
         return toolText(out.join('\n'));

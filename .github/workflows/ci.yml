@@ -59,6 +59,30 @@ jobs:
       - name: Run integration suite
         run: npm run e2e
 
+  pytest:
+    name: pytest-playwright (live)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install pytest-playwright and Chromium
+        run: |
+          python3 -m venv "$RUNNER_TEMP/py"
+          "$RUNNER_TEMP/py/bin/pip" install --quiet pytest-playwright
+          "$RUNNER_TEMP/py/bin/playwright" install --with-deps chromium
+      - name: Run the Python checks against a real pytest-playwright project
+        run: node --test test/pytest-runner.test.mjs
+        env:
+          PW_MCP_PYTHON: ${{ runner.temp }}/py/bin/python
+
   mcpb:
     name: mcpb bundle (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
