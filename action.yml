@@ -30,11 +30,17 @@ inputs:
   guard:
     description: On a pull request, run the heal guard first and fail when changed tests were made to pass by checking less (deleted assertions, skipped or removed tests, .only)
     default: 'false'
+  history-token:
+    description: Optional token for your team's self-hosted history server (history-server/ in this repo; use a secret). When set, the run is uploaded there; when empty nothing is sent anywhere
+    default: ''
+  history-url:
+    description: Address of your team's history server, required with history-token
+    default: ''
   pro-key:
-    description: Optional Pro key (use a secret). When set, the run is uploaded to Pro Cloud CI history; when empty nothing is sent anywhere
+    description: Old name of history-token (0.7 and 0.8); still works
     default: ''
   pro-url:
-    description: Pro Cloud address, required with pro-key
+    description: Old name of history-url (0.7 and 0.8); still works
     default: ''
   fail-on-failure:
     description: Fail the step when tests fail
@@ -103,16 +109,19 @@ runs:
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         echo "report=$report" >> "$GITHUB_OUTPUT"
 
-    - if: always() && inputs.pro-key != ''
+    - if: always() && (inputs.history-token != '' || inputs.pro-key != '')
       shell: bash
       working-directory: ${{ inputs.project-root }}
       env:
         PW_E2E_VERSION: ${{ inputs.version }}
-        PW_MCP_PRO_KEY: ${{ inputs.pro-key }}
-        PW_MCP_PRO_URL: ${{ inputs.pro-url }}
+        PW_MCP_HISTORY_TOKEN: ${{ inputs.history-token || inputs.pro-key }}
+        PW_MCP_HISTORY_URL: ${{ inputs.history-url || inputs.pro-url }}
+        # The same values under the 0.7/0.8 names, for a pinned older version.
+        PW_MCP_PRO_KEY: ${{ inputs.history-token || inputs.pro-key }}
+        PW_MCP_PRO_URL: ${{ inputs.history-url || inputs.pro-url }}
       run: |
         # History upload is best effort: it never fails the job.
-        npx -y "playwright-e2e-mcp@$PW_E2E_VERSION" upload || echo "::warning::Could not upload the run to Pro Cloud."
+        npx -y "playwright-e2e-mcp@$PW_E2E_VERSION" upload || echo "::warning::Could not upload the run to the history server."
 
     - if: inputs.comment == 'true' && github.event_name == 'pull_request' && steps.diagnose.outputs.exit-code != '0'
       shell: bash

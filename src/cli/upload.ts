@@ -1,36 +1,40 @@
 /**
- * `playwright-e2e-mcp upload`: send the project's recorded runs to Pro
- * Cloud (PW_MCP_PRO_KEY + PW_MCP_PRO_URL), so CI runs from every machine
- * end up in one history that analyze-history and the dashboard read.
+ * `playwright-e2e-mcp upload`: send the project's recorded runs to the
+ * team's history server (PW_MCP_HISTORY_TOKEN + PW_MCP_HISTORY_URL), so CI
+ * runs from every machine end up in one history that analyze-history and
+ * the dashboard read.
  *
  * Only runs newer than the last upload are sent (remembered in
- * .playwright-e2e-mcp/pro-upload.json); the service also ignores
+ * .playwright-e2e-mcp/history-upload.json); the server also ignores
  * duplicates, so a repeated upload is harmless.
  *
  * Exit codes: 0 uploaded (or nothing new), 1 the upload failed,
- * 2 bad arguments or Pro not configured.
+ * 2 bad arguments or no history server configured.
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { joinProjectPath, toNativePath } from '../utils/path-utils.js';
-import { proProjectName, proSettings, uploadRuns } from '../utils/pro-client.js';
+import { historyProjectName, historySettings, uploadRuns } from '../utils/history-client.js';
 import { HISTORY_DIR, readHistory } from '../utils/run-history.js';
 
 export const UPLOAD_USAGE = [
   'Usage: playwright-e2e-mcp upload [options]',
   '',
-  'Uploads recorded runs to Pro Cloud. Needs PW_MCP_PRO_KEY and PW_MCP_PRO_URL.',
+  "Uploads recorded runs to your team's history server (history-server/ in the",
+  'repo, free to self-host). Needs PW_MCP_HISTORY_TOKEN and PW_MCP_HISTORY_URL.',
   '',
-  '  --project <name>       name to file runs under (default: PW_MCP_PRO_PROJECT,',
+  '  --project <name>       name to file runs under (default: PW_MCP_HISTORY_PROJECT,',
   '                         the GitHub repository, or the folder name)',
   '  --project-root <dir>   project directory (default: cwd)',
   '  --all                  send every recorded run, not only new ones',
   '',
 ].join('\n');
 
-const MARKER = 'pro-upload.json';
+const MARKER = 'history-upload.json';
+/** The marker's name in 0.7 and 0.8, still read so an upgrade does not resend everything. */
+const OLD_MARKER = 'pro-upload.json';
 
 export async function runUpload(argv: string[]): Promise<number> {
   let values: { project?: string; 'project-root'?: string; all?: boolean };
@@ -46,23 +50,23 @@ export async function runUpload(argv: string[]): Promise<number> {
   }
   let settings;
   try {
-    settings = proSettings();
+    settings = historySettings();
   } catch (error) {
     process.stderr.write(`upload: ${(error as Error).message}\n`);
     return 2;
   }
   if (!settings) {
-    process.stderr.write('upload: PW_MCP_PRO_KEY is not set. Pro Cloud is optional; without a key nothing is sent anywhere.\n');
+    process.stderr.write('upload: PW_MCP_HISTORY_TOKEN is not set. A shared history server is optional; without one nothing is sent anywhere.\n');
     return 2;
   }
   const root = path.resolve(values['project-root'] ?? process.cwd()).replace(/\\/g, '/');
-  const project = values.project ?? (await proProjectName(root));
+  const project = values.project ?? (await historyProjectName(root));
   const marker = joinProjectPath(root, `${HISTORY_DIR}/${MARKER}`);
-  const last = values.all
-    ? ''
-    : await readFile(toNativePath(marker), 'utf8')
-        .then((text) => String((JSON.parse(text) as { lastAt?: string }).lastAt ?? ''))
-        .catch(() => '');
+  const readMarker = (file: string) =>
+    readFile(toNativePath(file), 'utf8')
+      .then((text) => String((JSON.parse(text) as { lastAt?: string }).lastAt ?? ''))
+      .catch(() => '');
+  const last = values.all ? '' : (await readMarker(marker)) || (await readMarker(joinProjectPath(root, `${HISTORY_DIR}/${OLD_MARKER}`)));
   const runs = (await readHistory(root, 500)).filter((entry) => entry.at > last);
   if (runs.length === 0) {
     process.stdout.write(`Nothing new to upload for ${project}.\n`);

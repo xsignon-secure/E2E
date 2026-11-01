@@ -191,6 +191,32 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  history-server:
+    name: history server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: history-server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: history-server/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - name: Build the image and check it answers with a token
+        run: |
+          docker build -t pw-history .
+          docker run -d --name pw-history -p 8787:8787 -e HISTORY_TOKENS=ci:ci_token_0123456789abcdef pw-history
+          for i in $(seq 1 20); do curl -fsS localhost:8787/api/v1/health && break; sleep 1; done
+          curl -fsS -H 'authorization: Bearer ci_token_0123456789abcdef' localhost:8787/api/v1/projects
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:8787/api/v1/projects)" = 401
+
   # The Dockerfile is what directories such as Glama build to check the
   # server starts; build it and complete an MCP handshake inside it.
   docker:

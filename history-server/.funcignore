@@ -1,0 +1,9 @@
+.git*
+.vscode
+README.md
+local.settings.json
+schema.sql
+test
+vercel.json
+Dockerfile
+server.mjs

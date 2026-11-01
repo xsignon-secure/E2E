@@ -1,7 +1,8 @@
 /**
- * Pro Cloud client: opt-in only (no key → no network), upload of recorded
- * runs, and analyze-history merging cloud runs. A small fake of the Pro
- * Cloud API stands in for the service.
+ * Shared history client: opt-in only (no token → no network), upload of
+ * recorded runs, and analyze-history merging the server's runs. A small fake
+ * of the history server API stands in for it. The 0.7/0.8 PW_MCP_PRO_* names
+ * keep working.
  */
 
 import { test } from 'node:test';
@@ -13,7 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { analyzeHistoryTool } from '../dist/tools/analyze-history.js';
 import { createToolStore } from '../dist/tools/shared.js';
-import { mergeRuns, proProjectName, proSettings } from '../dist/utils/pro-client.js';
+import { mergeRuns, historyProjectName, historySettings } from '../dist/utils/history-client.js';
 
 const silent = { info() {}, warn() {}, error() {}, debug() {}, child() { return silent; } };
 const ctxFor = (root) => ({ logger: silent, store: createToolStore(), projectRoot: root });
@@ -94,20 +95,23 @@ function cli(args, root, env) {
   });
 }
 
-test('without a Pro key nothing is configured and the history stays local', async () => {
-  assert.equal(proSettings({}), undefined);
-  assert.throws(() => proSettings({ PW_MCP_PRO_KEY: KEY }), /PW_MCP_PRO_URL is not/);
-  assert.throws(() => proSettings({ PW_MCP_PRO_KEY: KEY, PW_MCP_PRO_URL: 'http://pro.example.com' }), /https/);
-  assert.deepEqual(proSettings({ PW_MCP_PRO_KEY: ` ${KEY} `, PW_MCP_PRO_URL: 'https://pro.example.com/' }), { key: KEY, url: 'https://pro.example.com' });
+test('without a token nothing is configured and the history stays local', async () => {
+  assert.equal(historySettings({}), undefined);
+  assert.throws(() => historySettings({ PW_MCP_HISTORY_TOKEN: KEY }), /PW_MCP_HISTORY_URL is not/);
+  assert.throws(() => historySettings({ PW_MCP_PRO_KEY: KEY }), /PW_MCP_HISTORY_URL is not/);
+  assert.deepEqual(historySettings({ PW_MCP_HISTORY_TOKEN: KEY, PW_MCP_HISTORY_URL: 'https://history.example.com/' }), { key: KEY, url: 'https://history.example.com' });
+  assert.deepEqual(historySettings({ PW_MCP_HISTORY_TOKEN: KEY, PW_MCP_HISTORY_URL: 'https://new.example.com', PW_MCP_PRO_KEY: 'old', PW_MCP_PRO_URL: 'https://old.example.com' }), { key: KEY, url: 'https://new.example.com' });
+  assert.throws(() => historySettings({ PW_MCP_PRO_KEY: KEY, PW_MCP_PRO_URL: 'http://pro.example.com' }), /https/);
+  assert.deepEqual(historySettings({ PW_MCP_PRO_KEY: ` ${KEY} `, PW_MCP_PRO_URL: 'https://pro.example.com/' }), { key: KEY, url: 'https://pro.example.com' });
 
   const root = project([entry('2026-10-20T10:00:00.000Z', 'passed'), entry('2026-10-21T10:00:00.000Z', 'failed')]);
   try {
-    await withEnv({ PW_MCP_PRO_KEY: undefined, PW_MCP_PRO_URL: undefined }, async () => {
+    await withEnv({ PW_MCP_PRO_KEY: undefined, PW_MCP_PRO_URL: undefined, PW_MCP_HISTORY_TOKEN: undefined, PW_MCP_HISTORY_URL: undefined }, async () => {
       const local = await analyzeHistoryTool.handler({ view: 'test', test: 'checkout' }, ctxFor(root));
-      assert.doesNotMatch(textOf(local), /Pro Cloud/);
+      assert.doesNotMatch(textOf(local), /history server/);
       const cloud = await analyzeHistoryTool.handler({ source: 'cloud' }, ctxFor(root));
       assert.equal(cloud.isError, true);
-      assert.match(textOf(cloud), /needs a Pro key/);
+      assert.match(textOf(cloud), /needs a shared history server/);
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -117,13 +121,13 @@ test('without a Pro key nothing is configured and the history stays local', asyn
 test('upload sends only new runs, under the repository name, and is safe to repeat', async () => {
   const cloud = await fakeCloud();
   const root = project([entry('2026-10-20T10:00:00.000Z', 'passed'), entry('2026-10-21T10:00:00.000Z', 'failed')]);
-  const env = { PW_MCP_PRO_KEY: KEY, PW_MCP_PRO_URL: cloud.url, GITHUB_REPOSITORY: 'acme/shop', PW_MCP_PRO_PROJECT: '' };
+  const env = { PW_MCP_HISTORY_TOKEN: KEY, PW_MCP_HISTORY_URL: cloud.url, GITHUB_REPOSITORY: 'acme/shop', PW_MCP_HISTORY_PROJECT: '', PW_MCP_PRO_PROJECT: '' };
   try {
     const first = await cli(['upload'], root, env);
     assert.equal(first.code, 0, first.out);
     assert.match(first.out, /Uploaded 2 run\(s\) to acme\/shop: 2 stored/);
     assert.equal(cloud.requests[0].auth, `Bearer ${KEY}`);
-    assert.deepEqual(JSON.parse(readFileSync(path.join(root, '.playwright-e2e-mcp', 'pro-upload.json'), 'utf8')).lastAt, '2026-10-21T10:00:00.000Z');
+    assert.deepEqual(JSON.parse(readFileSync(path.join(root, '.playwright-e2e-mcp', 'history-upload.json'), 'utf8')).lastAt, '2026-10-21T10:00:00.000Z');
 
     const nothing = await cli(['upload'], root, env);
     assert.match(nothing.out, /Nothing new/);
@@ -137,10 +141,10 @@ test('upload sends only new runs, under the repository name, and is safe to repe
     const all = await cli(['upload', '--all'], root, env);
     assert.match(all.out, /Uploaded 3 run\(s\) to acme\/shop: 1 stored, 2 already there/);
 
-    const badKey = await cli(['upload', '--all'], root, { ...env, PW_MCP_PRO_KEY: 'wrong_key_12345' });
+    const badKey = await cli(['upload', '--all'], root, { ...env, PW_MCP_HISTORY_TOKEN: 'wrong_key_12345' });
     assert.equal(badKey.code, 1);
     assert.match(badKey.out, /not active/);
-    const noKey = await cli(['upload'], root, { ...env, PW_MCP_PRO_KEY: '' });
+    const noKey = await cli(['upload'], root, { ...env, PW_MCP_HISTORY_TOKEN: '' });
     assert.equal(noKey.code, 2);
     assert.match(noKey.out, /nothing is sent anywhere/);
   } finally {
@@ -149,7 +153,7 @@ test('upload sends only new runs, under the repository name, and is safe to repe
   }
 });
 
-test('analyze-history merges CI runs from Pro Cloud with local ones', async () => {
+test('analyze-history merges CI runs from the history server with local ones (old PW_MCP_PRO_* names)', async () => {
   const ciRuns = ['2026-10-18', '2026-10-19', '2026-10-22'].map((d, i) => entry(`${d}T10:00:00.000Z`, i === 1 ? 'failed' : 'passed'));
   const cloud = await fakeCloud({ 'acme/shop': ciRuns });
   const local = [entry('2026-10-20T10:00:00.000Z', 'failed'), entry('2026-10-21T10:00:00.000Z', 'passed')];
@@ -158,7 +162,7 @@ test('analyze-history merges CI runs from Pro Cloud with local ones', async () =
     await withEnv({ PW_MCP_PRO_KEY: KEY, PW_MCP_PRO_URL: cloud.url, PW_MCP_PRO_PROJECT: 'acme/shop' }, async () => {
       const both = await analyzeHistoryTool.handler({ view: 'test', test: 'checkout' }, ctxFor(root));
       const text = textOf(both);
-      assert.match(text, /2 local run\(s\) \+ 3 Pro Cloud run\(s\) for `acme\/shop`/);
+      assert.match(text, /2 local run\(s\) \+ 3 shared run\(s\) for `acme\/shop`/);
       assert.match(text, /`PFFPP`/, 'five runs in time order');
 
       const onlyLocal = await analyzeHistoryTool.handler({ view: 'test', test: 'checkout', source: 'local' }, ctxFor(root));
@@ -167,7 +171,7 @@ test('analyze-history merges CI runs from Pro Cloud with local ones', async () =
     await cloud.close();
     await withEnv({ PW_MCP_PRO_KEY: KEY, PW_MCP_PRO_URL: cloud.url, PW_MCP_PRO_PROJECT: 'acme/shop' }, async () => {
       const down = await analyzeHistoryTool.handler({ view: 'test', test: 'checkout' }, ctxFor(root));
-      assert.match(textOf(down), /local only; Pro Cloud failed/);
+      assert.match(textOf(down), /local only; the history server failed/);
       const cloudOnly = await analyzeHistoryTool.handler({ source: 'cloud' }, ctxFor(root));
       assert.equal(cloudOnly.isError, true);
     });
@@ -183,9 +187,9 @@ test('mergeRuns drops duplicates and keeps the newest runs; project names are sa
   assert.deepEqual(mergeRuns([a, b], [b, c], 2).map((e) => e.at), [b.at, c.at]);
   const root = mkdtempSync(path.join(tmpdir(), 'pw-pro-name-'));
   try {
-    assert.equal(await proProjectName(root, { PW_MCP_PRO_PROJECT: 'team/app' }), 'team/app');
-    assert.equal(await proProjectName(root, { PW_MCP_PRO_PROJECT: '../evil', GITHUB_REPOSITORY: 'acme/shop' }), 'acme/shop');
-    assert.equal(await proProjectName(root, {}), path.basename(root));
+    assert.equal(await historyProjectName(root, { PW_MCP_PRO_PROJECT: 'team/app' }), 'team/app');
+    assert.equal(await historyProjectName(root, { PW_MCP_PRO_PROJECT: '../evil', GITHUB_REPOSITORY: 'acme/shop' }), 'acme/shop');
+    assert.equal(await historyProjectName(root, {}), path.basename(root));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -1,0 +1,20 @@
+{
+  "name": "playwright-e2e-mcp-history-server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted shared CI run history for playwright-e2e-mcp: free and MIT",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.17.0",
+    "@neondatabase/serverless": "^1.0.0"
+  },
+  "main": "azure/functions.mjs"
+}

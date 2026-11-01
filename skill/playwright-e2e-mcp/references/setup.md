@@ -83,7 +83,7 @@ Set these in the server's `env` block. None of them are secrets except
 | `PW_MCP_STORAGE_STATE` | none | Default Playwright storageState JSON (inside the project) for the page tools, so signed-in pages open logged in |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Seeds for `diagnose-flaky`'s `order` pass (comma separated), to replay reported orders |
 | `PW_MCP_LOGIN_ENV` | — | Extra variables `save-login` may type through `{{env:NAME}}`, comma separated (default: only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*`) |
-| `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` | — | Optional paid Pro: CI runs uploaded with `upload` show up in `analyze-history` (`source: both`). Unset = no network calls |
+| `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` | — | Optional, free: the team's self-hosted history server (`history-server/` in the repo). CI runs uploaded with `upload` show up in `analyze-history` (`source: both`). Unset = no network calls. Old names `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` still work |
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock or HAR answers (0.8.0+) |
 | `PW_MCP_PYTHON` | project venv, then `python3` | The Python used for pytest-playwright projects (0.8.0+) |
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the 2026-07-28 MCP revision (0.8.0+) |

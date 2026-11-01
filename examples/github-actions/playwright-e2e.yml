@@ -64,9 +64,10 @@ jobs:
           # Heal guard: block test changes that pass by checking less (deleted assertions, skipped tests, .only)
           # guard: true
 
-          # Pro Cloud integration (optional, paid): upload run history to Pro Cloud
-          # pro-key: ${{ secrets.PW_MCP_PRO_KEY }}
-          # pro-url: https://pro.example.com
+          # Shared team history (optional, free): upload runs to your self-hosted history server
+          # (history-server/ in xsignon-secure/E2E)
+          # history-token: ${{ secrets.PW_MCP_HISTORY_TOKEN }}
+          # history-url: https://history.example.com
 
           # Fail step when tests fail (default: true)
           fail-on-failure: true

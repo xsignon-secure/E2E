@@ -72,8 +72,9 @@ default. There is no telemetry and no account.
 
 - **Run history** is a local file, `.playwright-e2e-mcp/history.jsonl`, written by every run.
   `analyze-history` and `diagnose-flaky` read it.
-- **The optional Pro client** (`src/utils/pro-client.ts`, `upload` CLI) makes network calls
-  only when both `PW_MCP_PRO_KEY` and `PW_MCP_PRO_URL` are set. There is no default URL.
+- **The optional shared history client** (`src/utils/history-client.ts`, `upload` CLI) makes
+  network calls only when both `PW_MCP_HISTORY_TOKEN` and `PW_MCP_HISTORY_URL` are set, and
+  only to the team's own [history server](history-server/README.md). There is no default URL.
 - **The update check** (`src/utils/update-check.ts`) runs only inside the `doctor` command:
   one GET to `registry.npmjs.org/playwright-e2e-mcp/latest`, carrying nothing but the
   package name. The MCP server never calls it; `--offline` or `PW_MCP_NO_UPDATE_CHECK=1`
@@ -141,7 +142,7 @@ its old self and blocks those changes.
 | Rewrite the heal guard on Babel/TypeScript ASTs | Not now. The lexical scan already covers the rules, needs no dependency and works on code that does not parse. |
 | AST slicing of the failing test for `get-failure` | Not needed: `get-failure` sends Playwright's few-line code frame, not the file. |
 | MCP tasks for long runs | Waiting for SDK support. Tasks are an optional extension in the 2026 spec; progress, cancel and background runs cover the need today. |
-| A hosted, stateless history store | The local file stays the default. The optional Pro service is the hosted variant. |
+| A hosted, stateless history store | The local file stays the default. `history-server/` is the self-hosted shared variant (file or Postgres storage). |
 
 ## 7. Python projects behind the same tools
 
