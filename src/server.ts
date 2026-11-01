@@ -9,8 +9,8 @@
 
 import { createRequire } from 'node:module';
 import { statSync } from 'node:fs';
-import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
-import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import { McpServer, SUPPORTED_PROTOCOL_VERSIONS, TRACEPARENT_META_KEY } from '@modelcontextprotocol/server';
 import type { ServerContext, StandardSchemaWithJSON, ToolAnnotations } from '@modelcontextprotocol/server';
 import type { ToolContext, ToolResponse, ToolStore } from './types/index.js';
 import { toPlaywrightMcpError } from './types/index.js';
@@ -38,6 +38,8 @@ import { checkTestChangeTool } from './tools/check-test-change.js';
 import { quarantineTool } from './tools/quarantine.js';
 import { registerPrompts } from './prompts.js';
 import { outputSchemaFor } from './tools/structured.js';
+import { CACHE_HINTS, SERVER_IDENTITY } from './discovery.js';
+import { attachBundledSkill } from './skills.js';
 
 /**
  * Accept unknown argument names instead of dropping them silently, so the
@@ -400,10 +402,48 @@ export function resolveDefaultProjectRoot(): string {
   return root;
 }
 
+/** The first protocol revision without sessions or the initialize handshake. */
+export const MODERN_PROTOCOL_VERSION = '2026-07-28';
+
+/**
+ * Protocol versions this server offers: the 2026-07-28 revision first, then
+ * every 2025-era version the SDK supports. PW_MCP_PROTOCOL=legacy drops the
+ * 2026 revision, for a client that misbehaves when it is offered.
+ */
+export function supportedProtocolVersions(): string[] {
+  const legacy = SUPPORTED_PROTOCOL_VERSIONS.filter((version) => version < MODERN_PROTOCOL_VERSION);
+  return process.env.PW_MCP_PROTOCOL === 'legacy' ? legacy : [MODERN_PROTOCOL_VERSION, ...legacy];
+}
+
+/** The trace id from a request's `traceparent` (`00-<trace-id>-<span-id>-<flags>`), when valid. */
+export function traceContext(meta: Record<string, unknown> | undefined): { traceId?: string; parentSpanId?: string } {
+  const value = meta?.[TRACEPARENT_META_KEY];
+  if (typeof value !== 'string') return {};
+  const match = /^[\da-f]{2}-([\da-f]{32})-([\da-f]{16})-[\da-f]{2}$/.exec(value.trim());
+  if (!match || /^0+$/.test(match[1]) || /^0+$/.test(match[2])) return {};
+  return { traceId: match[1], parentSpanId: match[2] };
+}
+
 export function createServer(options: CreateServerOptions = {}): McpServer {
   const projectRoot = options.projectRoot ?? resolveDefaultProjectRoot();
   const store = options.store ?? createToolStore();
-  const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
+  const server = new McpServer(
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+      title: SERVER_IDENTITY.title,
+      description: SERVER_IDENTITY.description,
+      websiteUrl: SERVER_IDENTITY.websiteUrl,
+      icons: SERVER_IDENTITY.icons.map((icon) => ({ ...icon, sizes: [...icon.sizes] })),
+    },
+    {
+      // Speak the stateless 2026-07-28 revision to clients that ask for it
+      // (server/discover), and the 2025 handshake to everyone else.
+      supportedProtocolVersions: supportedProtocolVersions(),
+      // 2026-07-28 clients may cache the lists for an hour (SEP-2549).
+      cacheHints: CACHE_HINTS,
+    },
+  );
 
   let selection = options.tools;
   if (!selection && process.env.PW_MCP_TOOLS) {
@@ -448,7 +488,9 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
                     })
                     .catch(() => undefined);
                 },
-          logger: logger.child({ tool: tool.name }),
+          // W3C trace context from the request _meta (SEP-414), so stderr
+          // logs line up with the client's OpenTelemetry spans.
+          logger: logger.child({ tool: tool.name, ...traceContext(reqCtx.mcpReq._meta) }),
           // v2: the request abort signal lives under ctx.mcpReq.
           signal: options.requestSignal
             ? AbortSignal.any([reqCtx.mcpReq.signal, options.requestSignal])
@@ -474,6 +516,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   }
 
   if (!options.tools) registerPrompts(server);
+  // The playbook for these tools, over the Skills extension (SEP-2640).
+  attachBundledSkill(server);
 
   logger.debug('server created', { version: SERVER_VERSION, projectRoot, tools: enabled.length });
   return server;
@@ -482,7 +526,7 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
 let shuttingDown = false;
 
 /** Close the server, kill orphaned children, and exit. */
-export async function shutdown(server: McpServer, code: number, reason: string): Promise<void> {
+export async function shutdown(server: { close(): Promise<void> }, code: number, reason: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   const killed = killActiveChildren();
@@ -495,10 +539,16 @@ export async function shutdown(server: McpServer, code: number, reason: string):
   process.exit(code);
 }
 
-/** Connect the server over stdio and install shutdown handlers. */
+/**
+ * Serve over stdio and install shutdown handlers. `serveStdio` lets the
+ * client's opening message pick the era: a 2026-07-28 client opens with
+ * `server/discover`, a 2025 client with `initialize`; either way one server
+ * from createServer() is pinned for the connection.
+ */
 export async function startServer(): Promise<void> {
-  const server = createServer();
-  const transport = new StdioServerTransport();
+  const server = serveStdio(() => createServer(), {
+    onerror: (error) => logger.warn('stdio transport error', { error }),
+  });
 
   process.on('SIGINT', () => void shutdown(server, 0, 'SIGINT'));
   process.on('SIGTERM', () => void shutdown(server, 0, 'SIGTERM'));
@@ -515,8 +565,7 @@ export async function startServer(): Promise<void> {
     void shutdown(server, 1, 'unhandledRejection');
   });
 
-  await server.connect(transport);
-  logger.info('connected over stdio', {
+  logger.info('serving over stdio', {
     version: SERVER_VERSION,
     projectRoot: resolveDefaultProjectRoot(),
     tools: resolveToolSelection(process.env.PW_MCP_TOOLS).tools ?? TOOLS.map((tool) => tool.name),
