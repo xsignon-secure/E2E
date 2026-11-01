@@ -77,7 +77,7 @@ Set these in the server's `env` block. None of them are secrets except
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PW_MCP_PROJECT_ROOT` | server working directory | Default project root for every tool |
-| `PW_MCP_TOOLS` | all | Tools to expose: names and/or profiles `core`, `triage`, `inspect`, `author` (same as the `--tools=` flag). `core` halves the tool-definition context |
+| `PW_MCP_TOOLS` | all | Tools to expose: names and/or profiles `core`, `triage`, `inspect`, `author` (same as the `--tools=` flag). `core` cuts the tool-definition context by about four fifths; `auto` starts with `core` plus `load-tools`, which loads the other tools when you need them |
 | `PW_MCP_ALLOWED_ROOTS` | none | Extra directories allowed as `projectRoot` (`:`-separated, `;` on Windows) |
 | `PW_MCP_BLOCK_PRIVATE_URLS` | off for stdio | `1` makes the URL tools refuse loopback, private-network and cloud-metadata addresses |
 | `PW_MCP_STORAGE_STATE` | none | Default Playwright storageState JSON (inside the project) for the page tools, so signed-in pages open logged in |

@@ -49,8 +49,10 @@ the user.
    `references/writing-tests.md`. Do not fall back to shelling out to `npx playwright test` unless
    the user asks. If only some are missing, the server may run a smaller tool
    profile (`--tools=core` exposes `run-test`, `get-run-status`, `get-failure`,
-   `suggest-fix`, `diagnose-flaky`, `check-test-change` and `list-tests`); work with what is there and
-   mention the profile when a task needs a page tool.
+   `suggest-fix`, `diagnose-flaky`, `check-test-change` and `list-tests`). If a `load-tools`
+   tool is listed, call it with the profile you need (`inspect`, `triage`, `author`) or the tool
+   names, then use them; otherwise work with what is there and mention the profile when a task
+   needs a page tool.
 3. Every tool except `get-run-status` takes an optional `projectRoot`. Leave it
    out unless the user works in a sub-project; the server defaults to `PW_MCP_PROJECT_ROOT` or its working
    directory, and rejects any root outside its allowed roots.

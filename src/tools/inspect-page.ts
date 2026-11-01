@@ -28,7 +28,7 @@ import {
   toolError,
   toolText,
 } from './shared.js';
-import { formatLocator } from '../utils/locator-expr.js';
+import { renderLocatorMap } from '../utils/locator-map.js';
 import { assertUrlAllowed } from '../utils/url-policy.js';
 
 const inspectPageInput = z.object({
@@ -44,7 +44,7 @@ const inspectPageInput = z.object({
   view: z
     .enum(['elements', 'locators', 'aria'])
     .optional()
-    .describe("'locators': compact map of interactive elements (cheapest); 'aria': accessibility snapshot + toMatchAriaSnapshot check (scoped by selector); 'elements' (default): DOM inventory"),
+    .describe("'locators' (default): compact map of interactive elements; 'aria': accessibility snapshot + toMatchAriaSnapshot check (scoped by selector); 'elements': full DOM inventory with boxes and attributes"),
   waitFor: z
     .string()
     .optional()
@@ -90,13 +90,6 @@ export function ariaAssertionCode(snapshot: string, selector?: string, indent = 
   return [`${pad}await expect(${target}).toMatchAriaSnapshot(\``, body, `${pad}\`);`].join('\n');
 }
 
-function renderLocatorLine(element: ElementInfo, position: number): string {
-  const best = bestLocator(element);
-  const alt = (element.locators ?? []).slice(1).map((chain) => `\`${formatLocator(chain)}\``);
-  const label = element.role ? `${element.role}${element.name ? ` "${clipLines(element.name, 1, 60)}"` : ''}` : element.tag;
-  return `${position}. \`${best ?? element.selector}\` — ${label}${alt.length > 0 ? ` · also ${alt.join(', ')}` : ''}`;
-}
-
 function renderElement(element: ElementInfo, position: number): string {
   const visibility = element.visible ? 'visible' : 'hidden';
   const box = element.box
@@ -123,7 +116,7 @@ function renderElement(element: ElementInfo, position: number): string {
 export const inspectPageTool = {
   name: 'inspect-page',
   description:
-    "Open a URL in a fresh headless browser and return its elements with Playwright locators proven unique on the page (role + name first), CSS selectors, visibility, text and console messages. Each call starts clean (no cookies kept): put every step to reach a state, login included, in actions, or open it signed in with storageState/headers. view 'locators' is the compact map; view 'aria' returns the accessibility snapshot plus a ready toMatchAriaSnapshot assertion.",
+    "Open a URL in a fresh headless browser and return its elements with Playwright locators proven unique on the page (role + name first), CSS selectors, visibility, text and console messages. Each call starts clean (no cookies kept): put every step to reach a state, login included, in actions, or open it signed in with storageState/headers. By default it returns the compact locator map; view 'elements' gives the full DOM inventory and view 'aria' returns the accessibility snapshot plus a ready toMatchAriaSnapshot assertion.",
   inputSchema: inspectPageSchema,
   handler: async (args: InspectPageInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('inspect-page', async () => {
@@ -132,7 +125,7 @@ export const inspectPageTool = {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       const state = await resolvePageState(args, root, url, ctx);
       const timeoutMs = args.timeoutMs ?? 45_000;
-      const view = args.view === 'aria' ? 'aria' : args.selector ? 'elements' : (args.view ?? 'elements');
+      const view = args.view === 'aria' ? 'aria' : args.selector ? 'elements' : (args.view ?? 'locators');
 
       const outcome = await runBrowserScript(
         {
@@ -230,7 +223,7 @@ export const inspectPageTool = {
       if (data.elements.length === 0) {
         lines.push('_No elements matched._', '');
       } else if (view === 'locators') {
-        for (let i = 0; i < data.elements.length; i += 1) lines.push(renderLocatorLine(data.elements[i], i + 1));
+        lines.push(...renderLocatorMap(data.elements));
         lines.push('');
       } else {
         for (let i = 0; i < data.elements.length; i += 1) {

@@ -480,7 +480,7 @@ async function phaseLivePage(client, origin) {
   const inspect = await callTool(
     client,
     'inspect-page',
-    { url: origin, waitFor: '#cta' },
+    { url: origin, waitFor: '#cta', view: 'elements' },
     90_000,
   );
   check('inspect-page returns the live DOM', !inspect.isError && inspect.text.includes('Freebuff Demo Shop'), inspect.text.slice(0, 400));

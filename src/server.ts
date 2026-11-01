@@ -11,7 +11,9 @@ import { createRequire } from 'node:module';
 import { statSync } from 'node:fs';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { McpServer, SUPPORTED_PROTOCOL_VERSIONS, TRACEPARENT_META_KEY } from '@modelcontextprotocol/server';
-import type { ServerContext, StandardSchemaWithJSON, ToolAnnotations } from '@modelcontextprotocol/server';
+import type { RegisteredTool, ServerContext, StandardSchemaWithJSON, ToolAnnotations } from '@modelcontextprotocol/server';
+import { z } from 'zod';
+import { withCompactJsonSchema } from './utils/compact-schema.js';
 import type { ToolContext, ToolResponse, ToolStore } from './types/index.js';
 import { toPlaywrightMcpError } from './types/index.js';
 import { logger } from './utils/logger.js';
@@ -334,6 +336,13 @@ export interface CreateServerOptions {
   restricted?: boolean;
   /** Aborted when the HTTP client goes away; combined with the MCP request signal. */
   requestSignal?: AbortSignal;
+  /**
+   * Allow `PW_MCP_TOOLS=auto` (load more tools on request). Only a server
+   * that lives for the whole connection can keep loaded tools, so stdio
+   * sets this; the stateless HTTP bridge, which builds a server per
+   * request, lists every selected tool instead.
+   */
+  lazyTools?: boolean;
 }
 
 /**
@@ -346,7 +355,7 @@ export const READ_ONLY_TOOLS: readonly string[] = ['list-tests', 'get-failure', 
 
 /**
  * Named tool sets for PW_MCP_TOOLS / --tools. Every tool definition costs
- * context on each request (all nineteen are ~16k tokens), so a client that
+ * context on each request (all nineteen are ~11.5k tokens), so a client that
  * only fixes failing suites can load the core loop alone.
  */
 export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {
@@ -357,12 +366,17 @@ export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {
   author: ['list-tests', 'save-login', 'inspect-page', 'validate-selector', 'generate-e2e-test', 'check-test-change', 'run-test'],
 };
 
+/** The profile names a client can load later with load-tools (see PW_MCP_TOOLS=auto). */
+export const LAZY_PROFILE = 'auto';
+
 /**
  * Resolve a comma-separated list of tool names and profile names
  * (`core,inspect-page`). Returns undefined (all tools) for an empty spec;
- * unknown entries are reported, not fatal.
+ * unknown entries are reported, not fatal. `auto` starts with the listed
+ * tools (the core loop when none are listed) and sets `lazy`, so the rest
+ * can be loaded on request with load-tools.
  */
-export function resolveToolSelection(spec: string | undefined): { tools?: string[]; unknown: string[] } {
+export function resolveToolSelection(spec: string | undefined): { tools?: string[]; unknown: string[]; lazy?: boolean } {
   const entries = (spec ?? '')
     .split(',')
     .map((entry) => entry.trim())
@@ -371,15 +385,21 @@ export function resolveToolSelection(spec: string | undefined): { tools?: string
   const known = new Set(TOOLS.map((tool) => tool.name));
   const selected = new Set<string>();
   const unknown: string[] = [];
+  let lazy = false;
   for (const entry of entries) {
+    if (entry.toLowerCase() === LAZY_PROFILE) {
+      lazy = true;
+      continue;
+    }
     const profile = TOOL_PROFILES[entry.toLowerCase()];
     if (profile) profile.forEach((name) => selected.add(name));
     else if (known.has(entry)) selected.add(entry);
     else unknown.push(entry);
   }
+  if (lazy && selected.size === 0) TOOL_PROFILES.core.forEach((name) => selected.add(name));
   if (selected.size === 0) return { unknown };
   // Keep the registry's order so tools/list is stable.
-  return { tools: TOOLS.map((tool) => tool.name).filter((name) => selected.has(name)), unknown };
+  return { tools: TOOLS.map((tool) => tool.name).filter((name) => selected.has(name)), unknown, ...(lazy ? { lazy } : {}) };
 }
 
 export function resolveDefaultProjectRoot(): string {
@@ -426,6 +446,63 @@ export function traceContext(meta: Record<string, unknown> | undefined): { trace
   return { traceId: match[1], parentSpanId: match[2] };
 }
 
+const LOADABLE_PROFILES = ['triage', 'inspect', 'author', 'all'] as const;
+
+/**
+ * load-tools: the one extra tool in PW_MCP_TOOLS=auto. It turns on hidden
+ * tools for the rest of the connection and the server tells the client
+ * the tool list changed (notifications/tools/list_changed).
+ */
+function registerLoadTools(server: McpServer, registered: Map<string, RegisteredTool>): void {
+  const hidden = () => [...registered.entries()].filter(([, handle]) => !handle.enabled).map(([name]) => name);
+  // Name only what each profile adds to the tools already listed.
+  const profiles = LOADABLE_PROFILES.filter((name) => name !== 'all')
+    .map((name) => `${name} (${TOOL_PROFILES[name].filter((tool) => !registered.get(tool)?.enabled).join(', ')})`)
+    .join(', ');
+  server.registerTool(
+    'load-tools',
+    {
+      title: 'Load more tools',
+      description: `Turn on more playwright-e2e-mcp tools for this session; only the core fix loop is loaded at first. Profiles: ${profiles}, all. Tool names work too.`,
+      inputSchema: withCompactJsonSchema(
+        z.object({
+          load: z.array(z.string()).min(1).max(20).describe("Profiles or tool names, e.g. ['inspect'] or ['audit-accessibility']"),
+        }),
+      ),
+      annotations: { title: 'Load more tools', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async (args: unknown) => {
+      const { load } = args as { load: string[] };
+      const resolved = resolveToolSelection(load.join(','));
+      const turnedOn: string[] = [];
+      for (const name of resolved.tools ?? []) {
+        const handle = registered.get(name);
+        if (handle && !handle.enabled) {
+          // Set directly so the client gets one list_changed, not one per tool.
+          handle.enabled = true;
+          turnedOn.push(name);
+        }
+      }
+      if (turnedOn.length > 0) server.sendToolListChanged();
+      const lines: string[] = [];
+      if (turnedOn.length > 0) {
+        lines.push(`Loaded: ${turnedOn.map((name) => `\`${name}\``).join(', ')}. They are in your tool list now; call them directly.`);
+        lines.push('', 'If your client does not show them, it ignores tool list changes: restart the server with `--tools=all` (or the profile you need).');
+      } else if ((resolved.tools ?? []).length > 0) {
+        lines.push('Those tools are already loaded.');
+      }
+      if (resolved.unknown.length > 0) lines.push(`Unknown: ${resolved.unknown.map((name) => `\`${name}\``).join(', ')}. Profiles: ${LOADABLE_PROFILES.join(', ')}.`);
+      const rest = hidden();
+      if (rest.length > 0) lines.push('', `Still available to load: ${rest.join(', ')}.`);
+      const failed = resolved.unknown.length > 0 && (resolved.tools ?? []).length === 0;
+      return {
+        content: [{ type: 'text' as const, text: lines.join('\n').trim() }],
+        ...(failed ? { isError: true } : {}),
+      };
+    },
+  );
+}
+
 export function createServer(options: CreateServerOptions = {}): McpServer {
   const projectRoot = options.projectRoot ?? resolveDefaultProjectRoot();
   const store = options.store ?? createToolStore();
@@ -448,25 +525,34 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
   );
 
   let selection = options.tools;
+  let lazy = false;
   if (!selection && process.env.PW_MCP_TOOLS) {
     const resolved = resolveToolSelection(process.env.PW_MCP_TOOLS);
     if (resolved.unknown.length > 0) {
       logger.warn('PW_MCP_TOOLS names unknown tools or profiles; ignoring them', {
         unknown: resolved.unknown,
-        profiles: Object.keys(TOOL_PROFILES),
+        profiles: [...Object.keys(TOOL_PROFILES), LAZY_PROFILE],
       });
     }
     selection = resolved.tools;
+    // Without a long-lived server, `auto` lists every tool: a tool loaded
+    // in one request would be gone in the next.
+    if (resolved.lazy && options.lazyTools) lazy = true;
+    else if (resolved.lazy) selection = undefined;
   }
   const enabled = selection ? TOOLS.filter((tool) => selection.includes(tool.name)) : TOOLS;
-  for (const tool of enabled) {
+  // In auto mode every tool is registered, and the ones not selected stay
+  // hidden until load-tools turns them on.
+  const registered = new Map<string, RegisteredTool>();
+  for (const tool of lazy ? TOOLS : enabled) {
     const input = looseInput(tool.inputSchema);
-    server.registerTool(
+    const handle = server.registerTool(
       tool.name,
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: input.schema,
+        // Listed without length/item limits (the full schema still validates).
+        inputSchema: withCompactJsonSchema(input.schema),
         // Results always carry structuredContent; the schema that describes
         // it costs context on every request, so PW_MCP_OUTPUT_SCHEMAS=0 drops it.
         ...(process.env.PW_MCP_OUTPUT_SCHEMAS !== '0' && outputSchemaFor(tool.name) ? { outputSchema: outputSchemaFor(tool.name) } : {}),
@@ -526,11 +612,14 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
         }
       },
     );
+    registered.set(tool.name, handle);
+    if (lazy && !enabled.includes(tool)) handle.disable();
   }
+  if (lazy) registerLoadTools(server, registered);
 
   if (!options.tools) registerPrompts(server);
   // The interactive test report view (MCP Apps).
-  if (enabled.some((tool) => appMetaFor(tool.name))) registerApps(server);
+  if ((lazy ? TOOLS : enabled).some((tool) => appMetaFor(tool.name))) registerApps(server);
   // The playbook for these tools, over the Skills extension (SEP-2640).
   attachBundledSkill(server);
 
@@ -561,7 +650,7 @@ export async function shutdown(server: { close(): Promise<void> }, code: number,
  * from createServer() is pinned for the connection.
  */
 export async function startServer(): Promise<void> {
-  const server = serveStdio(() => createServer(), {
+  const server = serveStdio(() => createServer({ lazyTools: true }), {
     onerror: (error) => logger.warn('stdio transport error', { error }),
   });
 

@@ -28,24 +28,33 @@ project, so the version you test with is the version the server uses.
 ## 1. Tool definitions cost tokens on every request
 
 An MCP client sends every tool's name, description and input schema with every model
-request. All nineteen tools cost about 16k tokens; that is paid again on each turn, whether or
+request. All nineteen tools cost about 11.5k tokens; that is paid again on each turn, whether or
 not a tool is called.
 
 Decisions that follow from this:
 
 - **Profiles.** `--tools=core` (or `PW_MCP_TOOLS=core`) loads only the seven tools of the fix
-  loop (run, status, failure, fix, flaky, heal guard, list), about 5k tokens. `triage`,
+  loop (run, status, failure, fix, flaky, heal guard, list), about 2.3k tokens. `triage`,
   `inspect` and `author` cover the other jobs. Profiles are resolved in `resolveToolSelection`
   in `src/server.ts`.
+- **Load on request.** `--tools=auto` registers every tool but lists only the core loop and
+  `load-tools`; `load-tools` turns on a profile or named tools and sends one
+  `notifications/tools/list_changed`. Only the stdio server keeps that state for the
+  connection, so the stateless HTTP bridge (a server per request) lists every tool instead.
 - **Short descriptions, loose schemas.** Descriptions say what a tool returns and when to call
   it, not how it works. Unknown arguments are reported back to the caller rather than
   rejected, so a model that guesses an argument name gets a correction instead of a dead end.
+- **Compact listed schemas.** `tools/list` leaves out length and item limits, `propertyNames`
+  and `$schema` (`src/utils/compact-schema.ts`); the server still validates every call against
+  the full schema, so an argument past a limit is refused with the limit named.
+- **Compact page views.** `inspect-page` defaults to the locator map, which shows a repeated
+  block (product cards, rows) once and names the rest (`src/utils/locator-map.ts`).
 - **Output schemas are optional.** Every result carries `structuredContent`, but its schema
-  is more context. `PW_MCP_OUTPUT_SCHEMAS=0` drops it (12k for all tools, 2.6k for `core`).
+  is more context for clients that show it to the model. `PW_MCP_OUTPUT_SCHEMAS=0` drops it.
 - **The server does the matching.** `suggest-fix` matches a broken locator against the DOM
   at failure and proves the replacement unique before returning it, so the model reads one
   diff rather than a 150-element snapshot. The [benchmark](bench/RESULTS.md) measures this:
-  about 5,500 tokens for one locator fix with `core`, against about 7,900 for Playwright MCP
+  about 3,000 tokens for one locator fix with `core`, against about 7,200 for Playwright MCP
   plus a shell.
 
 ## 2. Verified locators instead of guessed ones
