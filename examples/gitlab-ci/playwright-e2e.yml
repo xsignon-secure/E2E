@@ -1,0 +1,71 @@
+# playwright-e2e-mcp on GitLab CI.
+#
+# Copy this into .gitlab-ci.yml (or `include:` it). It does what the GitHub
+# Action does, with GitLab's own pieces:
+#   - on a merge request, the heal guard fails the job when a changed test
+#     now checks less (an assertion removed, a test skipped, `.only` added);
+#   - `ci` runs the suite (auto-retry once, so flaky tests are reported as
+#     flaky), repeats failures for a flaky verdict and drafts fixes;
+#   - the Markdown report is printed in the job log, kept as an artifact
+#     and, when E2E_REPORT_TOKEN is set, posted as a merge request comment.
+#
+# Exit codes of `ci`: 0 passed (flaky allowed), 1 tests failed, 2 the run
+# itself failed (no Playwright, config error, timeout).
+
+stages:
+  - test
+
+playwright-e2e:
+  stage: test
+  # Microsoft's Playwright image ships Node and the browsers. Use the tag that
+  # matches the @playwright/test version in your package-lock.json (the
+  # browsers are tied to it), e.g. v1.64.1-noble for 1.64.1.
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  variables:
+    # The guard compares with the target branch, so it needs real history.
+    GIT_DEPTH: "0"
+    npm_config_cache: "$CI_PROJECT_DIR/.npm"
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - npm ci --prefer-offline
+  script:
+    # 1. Heal guard, merge requests only. Add --strict to fail on warnings too.
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+        git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        npx -y playwright-e2e-mcp guard --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+      fi
+    # 2. Run and diagnose the suite. --verify-fixes re-runs each failing test
+    #    with its drafted fix applied, then restores the file.
+    - npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+  after_script:
+    # 3. Post the report on the merge request. E2E_REPORT_TOKEN is a project
+    #    access token with the `api` scope, stored as a masked CI/CD variable.
+    #    after_script runs even when the tests fail, so the report still lands.
+    - |
+      if [ -f e2e-report.md ] && [ -n "$CI_MERGE_REQUEST_IID" ] && [ -n "$E2E_REPORT_TOKEN" ]; then
+        node -e 'process.stdout.write(JSON.stringify({ body: require("fs").readFileSync("e2e-report.md", "utf8").slice(0, 900000) }))' > e2e-note.json
+        curl --silent --show-error --fail --request POST \
+          --header "PRIVATE-TOKEN: $E2E_REPORT_TOKEN" \
+          --header "Content-Type: application/json" \
+          --data @e2e-note.json \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" > /dev/null \
+          || echo "Could not post the report on the merge request"
+      fi
+  artifacts:
+    name: "playwright-e2e-$CI_COMMIT_REF_SLUG"
+    when: always
+    expose_as: "Playwright E2E report"
+    paths:
+      - e2e-report.md
+      - playwright-report/
+      - test-results/
+    expire_in: 14 days

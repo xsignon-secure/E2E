@@ -482,26 +482,76 @@ async function fillValue(raw) {
   });
 }
 
+// Find the tab a switchTab step names: 'last' (default), 'first', a 1-based
+// number, or text the tab's URL or title contains. Popups open
+// asynchronously, so keep looking until the step's timeout.
+async function findTab(context, want, timeout) {
+  const target = String(want == null || want === '' ? 'last' : want).trim();
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const pages = context.pages().filter((p) => !p.isClosed());
+    let found = null;
+    if (target === 'last') found = pages.length > 1 ? pages[pages.length - 1] : null;
+    else if (target === 'first') found = pages[0] || null;
+    else if (/^\d+$/.test(target)) found = pages[Number(target) - 1] || null;
+    else {
+      const needle = target.toLowerCase();
+      for (const p of pages) {
+        let title = '';
+        try { title = await p.title(); } catch (err) { /* navigating */ }
+        if (p.url().toLowerCase().indexOf(needle) >= 0 || title.toLowerCase().indexOf(needle) >= 0) { found = p; break; }
+      }
+    }
+    if (found) return found;
+    if (Date.now() >= deadline) {
+      const open = [];
+      for (const p of pages) open.push(p.url());
+      throw new Error('No tab matches "' + target + '"; open tabs: ' + (open.length ? open.join(', ') : 'none'));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+// Every open tab, for the tool output when an action opened more than one.
+async function listTabs(context, active) {
+  const tabs = [];
+  for (const p of context.pages()) {
+    if (p.isClosed()) continue;
+    let title = '';
+    try { title = await p.title(); } catch (err) { /* navigating */ }
+    tabs.push({ url: p.url(), title: String(title).slice(0, 200), active: p === active });
+  }
+  return tabs;
+}
+
 async function runActions(page, actions, timeout) {
   const done = [];
+  let current = page;
   for (let i = 0; i < actions.length; i += 1) {
     const a = actions[i];
     const label = 'step ' + (i + 1) + ' (' + (a.label || a.type) + ')';
     try {
-      const loc = a.locator ? resolveChain(page, a.locator) : null;
+      if (a.type === 'switchTab') {
+        current = await findTab(current.context(), a.value, timeout);
+        await current.bringToFront().catch(() => undefined);
+        await current.waitForLoadState('domcontentloaded', { timeout: timeout }).catch(() => undefined);
+        done.push(label);
+        continue;
+      }
+      const loc = a.locator ? resolveChain(current, a.locator) : null;
       switch (a.type) {
-        case 'goto': await page.goto(a.url, { waitUntil: cfg.waitUntil || 'domcontentloaded', timeout: timeout }); break;
+        case 'goto': await current.goto(a.url, { waitUntil: cfg.waitUntil || 'domcontentloaded', timeout: timeout }); break;
         case 'click': await loc.click({ timeout: timeout }); break;
         case 'dblclick': await loc.dblclick({ timeout: timeout }); break;
         case 'hover': await loc.hover({ timeout: timeout }); break;
         case 'fill': await loc.fill(cfg.mode === 'login' ? await fillValue(a.value) : (a.value || ''), { timeout: timeout }); break;
-        case 'press': if (loc) await loc.press(a.value, { timeout: timeout }); else await page.keyboard.press(a.value); break;
+        case 'press': if (loc) await loc.press(a.value, { timeout: timeout }); else await current.keyboard.press(a.value); break;
         case 'check': await loc.check({ timeout: timeout }); break;
         case 'uncheck': await loc.uncheck({ timeout: timeout }); break;
         case 'select': await loc.selectOption(a.value, { timeout: timeout }); break;
         case 'wait':
           if (loc) await loc.first().waitFor({ state: 'visible', timeout: timeout });
-          else await page.waitForTimeout(Math.min(a.ms || 500, 10000));
+          else await current.waitForTimeout(Math.min(a.ms || 500, 10000));
           break;
         default: throw new Error('Unknown action type ' + a.type);
       }
@@ -510,7 +560,7 @@ async function runActions(page, actions, timeout) {
       const message = err && err.message ? err.message : String(err);
       const callLog = callLogOf(message);
       let where = '';
-      try { where = page.url(); } catch (urlErr) { /* page gone */ }
+      try { where = current.url(); } catch (urlErr) { /* page gone */ }
       const wrapped = new Error('Action ' + label + ' failed: ' + message.split('\n')[0] + (/intercepts pointer events/.test(callLog) ? ' (another element intercepts pointer events)' : ''));
       wrapped.actionsDone = done;
       wrapped.callLog = callLog;
@@ -518,7 +568,7 @@ async function runActions(page, actions, timeout) {
       throw wrapped;
     }
   }
-  return done;
+  return { done: done, page: current };
 }
 
 /* ---------------- performance (mode: perf) ---------------- */
@@ -748,6 +798,18 @@ function summariseRequests(requests, timings, pageUrl) {
     if (recording) contextOptions.recordHar = { path: cfg.har.path, urlFilter: cfg.har.url, mode: 'minimal' };
     const context = await browser.newContext(contextOptions);
     openContext = context;
+    // blockWrites: registered first, so it runs last, after the HAR replay
+    // and every mock below have had their chance to answer.
+    const blockedWrites = { total: 0, requests: [] };
+    if (cfg.blockWrites && !cfg.snapshotHtmlPath) {
+      await context.route('**/*', (route) => {
+        const method = route.request().method();
+        if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return route.fallback();
+        blockedWrites.total += 1;
+        if (blockedWrites.requests.length < 20) blockedWrites.requests.push({ method: method, url: route.request().url() });
+        return route.abort('blockedbyclient');
+      });
+    }
     // Replay goes first so the network mocks below, registered later, win.
     if (cfg.har && cfg.har.mode === 'replay' && !cfg.snapshotHtmlPath) {
       await context.routeFromHAR(cfg.har.path, { url: cfg.har.url, notFound: cfg.har.notFound || 'abort' });
@@ -773,7 +835,7 @@ function summariseRequests(requests, timings, pageUrl) {
     }
 
     if (cfg.mode === 'perf') await context.addInitScript(perfInit);
-    const page = await context.newPage();
+    let page = await context.newPage();
 
     // perf: count bytes per request over CDP (cross-origin sizes included)
     // and apply CPU / network throttling before the first byte.
@@ -800,12 +862,17 @@ function summariseRequests(requests, timings, pageUrl) {
     }
 
     const consoleMessages = [];
-    page.on('console', (msg) => {
-      if (consoleMessages.length < 50) consoleMessages.push({ type: msg.type(), text: String(msg.text()).slice(0, 300) });
-    });
-    page.on('pageerror', (err) => {
-      if (consoleMessages.length < 50) consoleMessages.push({ type: 'pageerror', text: String(err).slice(0, 300) });
-    });
+    // Popups and new tabs report their console too.
+    const watchConsole = (p) => {
+      p.on('console', (msg) => {
+        if (consoleMessages.length < 50) consoleMessages.push({ type: msg.type(), text: String(msg.text()).slice(0, 300) });
+      });
+      p.on('pageerror', (err) => {
+        if (consoleMessages.length < 50) consoleMessages.push({ type: 'pageerror', text: String(err).slice(0, 300) });
+      });
+    };
+    watchConsole(page);
+    context.on('page', watchConsole);
 
     if (cfg.snapshotHtmlPath) {
       // A DOM snapshot from a trace: render it with every request blocked,
@@ -819,7 +886,9 @@ function summariseRequests(requests, timings, pageUrl) {
       // perf: let late images, fonts and shifts land before anything else.
       if (cfg.mode === 'perf' && cfg.settleMs) await page.waitForTimeout(cfg.settleMs);
       if (cfg.actions && cfg.actions.length) {
-        actionsDone = await runActions(page, cfg.actions, cfg.actionTimeout || 10000);
+        const ran = await runActions(page, cfg.actions, cfg.actionTimeout || 10000);
+        actionsDone = ran.done;
+        page = ran.page;
         if (cfg.mode === 'perf') {
           await page.waitForLoadState('load', { timeout: cfg.waitTimeout || 5000 }).catch(() => undefined);
           await page.waitForTimeout(Math.min(cfg.settleMs || 1000, 2000));
@@ -866,6 +935,7 @@ function summariseRequests(requests, timings, pageUrl) {
           title: await page.title(),
           actionsDone: actionsDone,
           routeHits: routeHits,
+          blockedWrites: blockedWrites.total ? blockedWrites : undefined,
           httpStatus: httpStatus,
           durationMs: Date.now() - cfg.startedAt,
           login: {
@@ -897,11 +967,13 @@ function summariseRequests(requests, timings, pageUrl) {
           title: await page.title(),
           finalUrl: page.url(),
           viewport: page.viewportSize() || { width: 1280, height: 720 },
+          tabs: context.pages().length > 1 ? await listTabs(context, page) : undefined,
           elementCount: 0,
           matchCount: 0,
           elements: [],
           actionsDone: actionsDone,
           routeHits: routeHits,
+          blockedWrites: blockedWrites.total ? blockedWrites : undefined,
           httpStatus: httpStatus,
           durationMs: Date.now() - cfg.startedAt,
         },
@@ -1098,7 +1170,9 @@ function summariseRequests(requests, timings, pageUrl) {
 
     data.consoleMessages = consoleMessages;
     data.actionsDone = actionsDone;
+    if (context.pages().length > 1) data.tabs = await listTabs(context, page);
     data.routeHits = routeHits;
+    if (blockedWrites.total) data.blockedWrites = blockedWrites;
     data.finalUrl = data.finalUrl || page.url();
     data.httpStatus = httpStatus;
     data.durationMs = Date.now() - cfg.startedAt;

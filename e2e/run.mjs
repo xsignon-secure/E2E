@@ -231,6 +231,24 @@ async function startFixtureServer() {
         html('<label for="card">Card number</label><input id="card"><button>Pay</button>');
         return;
       }
+      if (req.method === 'GET' && req.url === '/opener') {
+        html('<h1>Shop</h1><button id="sso" onclick="window.open(\'/popup\', \'_blank\')">Sign in with SSO</button>');
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/popup') {
+        html('<title>SSO provider</title><h1>Choose an account</h1><button>Continue as QA</button>');
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/order') {
+        // Clicking "Place order" sends a POST the blockWrites option must stop.
+        html('<h1>Order</h1><button id="place" onclick="fetch(\'/api/order\', { method: \'POST\' }).then(() => { document.body.insertAdjacentHTML(\'beforeend\', \'<p>sent</p>\'); }).catch(() => { document.body.insertAdjacentHTML(\'beforeend\', \'<p>blocked</p>\'); })">Place order</button>');
+        return;
+      }
+      if (req.method === 'POST' && req.url === '/api/order') {
+        state.orders = (state.orders ?? 0) + 1;
+        res.writeHead(201, { 'content-type': 'application/json' }).end('{"ok":true}');
+        return;
+      }
       if (req.method === 'GET' && req.url === '/loop') {
         res.writeHead(302, { location: '/loop' }).end();
         return;
@@ -261,6 +279,7 @@ async function startFixtureServer() {
       const port = typeof address === 'object' && address ? address.port : 0;
       resolve({
         origin: `http://127.0.0.1:${port}`,
+        state,
         flip: async () => {
           const response = await fetch(`http://127.0.0.1:${port}/flip`, { method: 'POST' });
           if (!response.ok) throw new Error(`fixture flip failed: ${response.status}`);
@@ -618,6 +637,23 @@ async function phaseLivePage(client, origin) {
   const frameButton = await callTool(client, 'validate-selector', { url: `${origin}/frame`, selector: "locator('#pay').contentFrame().getByRole('button', { name: 'Pay' })" }, 60_000);
   check('validate-selector resolves locators inside an iframe', frameButton.result.structuredContent?.matches === 1, frameButton.text.slice(0, 400));
 
+  // Popups: a click opens a new tab; switchTab moves inspection there.
+  const popup = await callTool(client, 'inspect-page', { url: `${origin}/opener`, actions: [{ type: 'click', locator: "getByRole('button', { name: 'Sign in with SSO' })" }, { type: 'switchTab', value: 'popup' }], view: 'locators' }, 60_000);
+  check('switchTab inspects the popup a click opened', !popup.isError && popup.text.includes('Continue as QA'), popup.text.slice(0, 600));
+  contains('the result lists every open tab and marks the inspected one', popup.text, '**(inspected)**');
+  const popupLast = await callTool(client, 'validate-selector', { url: `${origin}/opener`, selector: "getByRole('button', { name: 'Continue as QA' })", actions: [{ type: 'click', locator: '#sso' }, { type: 'switchTab' }] }, 60_000);
+  check("switchTab defaults to the newest tab", popupLast.result.structuredContent?.matches === 1, popupLast.text.slice(0, 400));
+  const noTab = await callTool(client, 'inspect-page', { url: `${origin}/opener`, actions: [{ type: 'switchTab', value: 'nowhere' }], actionTimeoutMs: 1_000 }, 60_000);
+  check('switchTab names the open tabs when none matches', noTab.isError && noTab.text.includes('No tab matches "nowhere"'), noTab.text.slice(0, 400));
+
+  // blockWrites: the POST is aborted before it reaches the server.
+  fixtureState.orders = 0;
+  const blocked = await callTool(client, 'inspect-page', { url: `${origin}/order`, blockWrites: true, actions: [{ type: 'click', locator: '#place' }, { type: 'wait', locator: "getByText('blocked')" }], view: 'locators' }, 60_000);
+  check('blockWrites stops the POST before it reaches the server', !blocked.isError && fixtureState.orders === 0, `${blocked.text.slice(0, 400)} orders=${fixtureState.orders}`);
+  contains('blockWrites lists the blocked request', blocked.text, 'POST');
+  const mockedWrite = await callTool(client, 'inspect-page', { url: `${origin}/order`, blockWrites: true, routes: [{ url: '**/api/order', method: 'POST', status: 201, json: { ok: true } }], actions: [{ type: 'click', locator: '#place' }, { type: 'wait', locator: "getByText('sent')" }], view: 'locators' }, 60_000);
+  check('a mock still answers a write under blockWrites', !mockedWrite.isError && fixtureState.orders === 0, mockedWrite.text.slice(0, 400));
+
   // save-login: password from the environment, a live authenticator code,
   // a checked session file, reuse while valid, and a failed login reported.
   const loginSteps = [
@@ -696,6 +732,8 @@ async function phaseLivePage(client, origin) {
 
 // Set by main() so phaseLivePage can toggle the fixture app's button color.
 let flipFixture = async () => {};
+/** The fixture server's mutable state (orders counted by /api/order). */
+let fixtureState = {};
 
 async function phaseTestRuns(client, origin) {
   const list = await callTool(client, 'list-tests', {}, 90_000);
@@ -708,6 +746,23 @@ async function phaseTestRuns(client, origin) {
   const pass = await callTool(client, 'run-test', { testFiles: ['tests/pass.spec.ts'] }, 180_000);
   check('run-test passes the healthy spec', !pass.isError && pass.text.includes('✅ PASSED'), pass.text.slice(0, 500));
   contains('pass run reports stats | 1 | 0 | 0 | 0 |', pass.text, '| 1 | 0 | 0 | 0 |');
+
+  // A Playwright process that dies hard (OOM killer, crash) never writes its
+  // JSON report; the failure that finished before it died must still be
+  // reported. The second test kills the runner process from its worker.
+  const hangSpec = path.join(fixtureRoot, 'tests', 'zz-killed-run.spec.ts');
+  writeFileSync(
+    hangSpec,
+    "import { expect, test } from '@playwright/test';\n\ntest('fails before the kill', async () => {\n  expect(1, 'killed-run marker').toBe(2);\n});\n\ntest('kills the runner', async () => {\n  process.kill(process.ppid, 'SIGKILL');\n  await new Promise(() => undefined);\n});\n",
+  );
+  try {
+    const killed = await callTool(client, 'run-test', { testFiles: ['tests/zz-killed-run.spec.ts'], retryOnFailure: false, timeoutMs: 60_000 }, 120_000);
+    check('a crashed run still reports the failure that finished', killed.text.includes('killed-run marker') && killed.text.includes('fails before the kill'), killed.text.slice(0, 800));
+    contains('a crashed run says where the failures came from', killed.text, 'never wrote its JSON report');
+    check('a crashed run is marked partial', killed.result.structuredContent?.run?.partial === true && killed.result.structuredContent.run.failures?.length === 1, JSON.stringify(killed.result.structuredContent?.run).slice(0, 300) + ` failures=${killed.result.structuredContent?.run?.failures?.length}`);
+  } finally {
+    rmSync(hangSpec, { force: true });
+  }
 
   client.notifications.length = 0;
   const fail = await callTool(client, 'run-test', { testFiles: ['tests/fail.spec.ts'], retryOnFailure: false }, 180_000, { progressToken: 'e2e-fail' });
@@ -1128,6 +1183,7 @@ async function main() {
 
   const fixture = await startFixtureServer();
   flipFixture = fixture.flip;
+  fixtureState = fixture.state;
 
   const child = spawn(process.execPath, [serverEntry], {
     cwd: repoRoot,

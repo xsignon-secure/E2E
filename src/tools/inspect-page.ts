@@ -17,6 +17,8 @@ import {
   clipLines,
   describePageState,
   describeRouteHits,
+  describeTabs,
+  describeBlockedWrites,
   guard,
   loginHint,
   pageStateShape,
@@ -183,6 +185,8 @@ export const inspectPageTool = {
       const mocks = describeRouteHits(state, data.routeHits);
       if (mocks.length > 0) lines.push('**Network mocks:**', ...mocks);
       if (data.actionsDone?.length) lines.push(`**Steps run:** ${data.actionsDone.join('; ')}`);
+      lines.push(...describeTabs(data.tabs));
+      lines.push(...describeBlockedWrites(data.blockedWrites));
       lines.push('');
       if (data.httpStatus !== undefined && data.httpStatus >= 400) {
         lines.push(`> ⚠️ The page answered **HTTP ${data.httpStatus}**, so this is its error page.`, '');

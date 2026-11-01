@@ -112,7 +112,10 @@ test('run-test never hands a smuggled flag to Playwright', async () => {
   assert.ok(fine.argv, 'stub CLI should have run');
   assert.ok(fine.argv.includes('tests/a.spec.ts'));
   assert.ok(fine.argv.includes('--repeat-each=2'));
-  assert.equal(fine.argv.at(-1), '--reporter=json');
+  // JSON first, then only the server's own reporters (written to the temp dir).
+  const reporters = fine.argv.at(-1).replace(/^--reporter=/, '').split(',');
+  assert.equal(reporters[0], 'json');
+  for (const extra of reporters.slice(1)) assert.match(extra, /pw-mcp-[\w-]+-reporter-[\w-]+\.cjs$/);
   assert.equal(fine.argv.filter((arg) => arg.startsWith('--reporter')).length, 1);
 });
 

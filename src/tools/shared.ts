@@ -322,12 +322,12 @@ export function failureHint(kind: FailureKind): string {
 
 const MAX_MOCK_BODY = 200_000;
 
-const ACTION_TYPES = ['goto', 'click', 'dblclick', 'hover', 'fill', 'press', 'check', 'uncheck', 'select', 'wait'] as const;
+const ACTION_TYPES = ['goto', 'click', 'dblclick', 'hover', 'fill', 'press', 'check', 'uncheck', 'select', 'wait', 'switchTab'] as const;
 
 export const pageActionSchema = z.object({
   type: z.enum(ACTION_TYPES),
   locator: z.string().optional().describe("Locator or selector, e.g. getByRole('button', { name: 'Next' })"),
-  value: z.string().optional().describe('fill text, press key, select option'),
+  value: z.string().optional().describe("fill text, press key, select option; switchTab: 'last' (default), 'first', a 1-based number, or text in the tab's URL or title"),
   url: z.string().optional().describe('goto target (may be relative)'),
   ms: z.number().int().min(0).max(10_000).optional().describe('wait without locator'),
 });
@@ -380,6 +380,10 @@ export const pageStateShape = {
   viewport: z
     .object({ width: z.number().int().min(200).max(4_000), height: z.number().int().min(200).max(4_000) })
     .optional(),
+  blockWrites: z
+    .boolean()
+    .optional()
+    .describe('Abort POST/PUT/PATCH/DELETE requests no mock answers, so steps cannot change real data (default: PW_MCP_BLOCK_WRITES)'),
   har: z
     .object({
       path: z.string().min(1).max(500).describe('.har or .zip inside the project'),
@@ -408,6 +412,7 @@ export interface PageStateInput {
   actions?: Array<z.infer<typeof pageActionSchema>>;
   routes?: Array<z.infer<typeof routeMockSchema>>;
   viewport?: { width: number; height: number };
+  blockWrites?: boolean;
   har?: { path: string; mode?: 'replay' | 'record'; url?: string; notFound?: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
@@ -438,6 +443,8 @@ export interface ResolvedPageState {
   actions?: Array<{ type: string; label: string; locator?: LocatorCall[]; value?: string; url?: string; ms?: number }>;
   routes?: ResolvedRouteMock[];
   viewport?: { width: number; height: number };
+  /** Abort write requests (POST/PUT/PATCH/DELETE) that no mock or HAR answers. */
+  blockWrites?: boolean;
   har?: { path: string; mode: 'replay' | 'record'; url?: string; notFound: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
@@ -583,6 +590,8 @@ export async function resolvePageState(
     out.headers = input.headers;
   }
   if (input.viewport) out.viewport = input.viewport;
+  const blockWrites = input.blockWrites ?? /^(1|true|yes)$/i.test(process.env.PW_MCP_BLOCK_WRITES ?? '');
+  if (blockWrites) out.blockWrites = true;
   if (input.har) out.har = await resolveHar(input.har, root, ctx);
   if (input.browser && input.browser !== 'chromium') {
     if (serverlessChromiumEnabled()) {
@@ -646,6 +655,12 @@ export async function resolvePageState(
       if ((action.type === 'press' || action.type === 'select') && action.value === undefined) {
         throw new PlaywrightMcpError(`${step} needs a value`, 'INVALID_INPUT');
       }
+      if (action.type === 'switchTab') {
+        const want = (action.value ?? 'last').trim() || 'last';
+        if (want.length > 200) throw new PlaywrightMcpError(`${step}: value is too long`, 'INVALID_INPUT');
+        out.actions.push({ type: 'switchTab', label: `switchTab ${want}`, value: want });
+        continue;
+      }
       const locator = action.locator ? parseLocator(action.locator) : undefined;
       out.actions.push({
         type: action.type,
@@ -666,6 +681,7 @@ export function describePageState(state: ResolvedPageState, root: string): strin
   if (state.headers) parts.push(`${Object.keys(state.headers).length} extra header(s)`);
   if (state.actions?.length) parts.push(`${state.actions.length} step(s) run first`);
   if (state.routes?.length) parts.push(`${state.routes.length} mocked route(s)`);
+  if (state.blockWrites) parts.push('write requests blocked');
   if (state.har) {
     const file = `\`${relativeToRoot(root, state.har.path)}\``;
     parts.push(state.har.mode === 'record' ? `recording HAR to ${file}` : `HAR replay from ${file}`);
@@ -763,6 +779,10 @@ export interface BrowserScriptData {
   consoleMessages?: import('../types/index.js').ConsoleMessageInfo[];
   /** Page actions that completed before inspection. */
   actionsDone?: string[];
+  /** blockWrites: the write requests that were aborted (first 20) and how many in all. */
+  blockedWrites?: { total: number; requests: Array<{ method: string; url: string }> };
+  /** Every open tab, when an action opened more than one; `active` is the one inspected. */
+  tabs?: BrowserTab[];
   durationMs?: number;
   /** mode 'a11y': axe-core violations; node.element indexes `elements`. */
   a11y?: AccessibilityScan;
@@ -777,6 +797,32 @@ export interface BrowserScriptData {
   httpStatus?: number;
   /** mode 'login': the session check and what the session holds. */
   login?: LoginScan;
+}
+
+export interface BrowserTab {
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+/** Markdown lines naming the write requests blockWrites aborted. */
+export function describeBlockedWrites(blocked: BrowserScriptData['blockedWrites']): string[] {
+  if (!blocked || blocked.total === 0) return [];
+  const lines = [`**Write requests blocked (${blocked.total}):** answer one with a \`routes\` mock if the page needs its response.`];
+  for (const req of blocked.requests) lines.push(`- \`${req.method} ${req.url.slice(0, 200)}\``);
+  if (blocked.total > blocked.requests.length) lines.push(`- … and ${blocked.total - blocked.requests.length} more`);
+  return lines;
+}
+
+/** Markdown lines listing the open tabs; empty when there is only one. */
+export function describeTabs(tabs: BrowserTab[] | undefined): string[] {
+  if (!tabs || tabs.length < 2) return [];
+  const lines = [`**Open tabs (${tabs.length}):** add a \`switchTab\` step (value 'last', a number, or text in the URL or title) to inspect another one.`];
+  tabs.forEach((tab, i) => {
+    const title = tab.title ? ` "${tab.title.replace(/\s+/g, ' ')}"` : '';
+    lines.push(`${i + 1}. ${tab.active ? '**(inspected)** ' : ''}${tab.url}${title}`);
+  });
+  return lines;
 }
 
 export interface LoginScan {
