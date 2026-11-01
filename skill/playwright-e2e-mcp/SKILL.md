@@ -13,7 +13,7 @@ and concrete next steps. It can also propose and apply a verified fix for a brok
 locator, inspect pages behind a login, run long suites in the background and keep
 a local history of every run.
 
-This skill is written for playwright-e2e-mcp 0.10.0 and works with 0.2.0 or
+This skill is written for playwright-e2e-mcp 0.11.0 and works with 0.2.0 or
 newer. If `suggest-fix`, `get-run-status` or `analyze-history` is missing, the
 server is older than 0.2.0: use the steps that do not need those tools and tell
 the user to update it. `diagnose-flaky`'s per-test table and `isolate` option
@@ -28,7 +28,9 @@ pytest-playwright projects (`run-test`, `get-failure`, `list-tests`) arrived in
 0.8.0; the free self-hosted history server (`PW_MCP_HISTORY_URL` /
 `PW_MCP_HISTORY_TOKEN`, replacing the old Pro settings, which still work) arrived
 in 0.9.0; asking before changing files, the interactive test report (MCP Apps)
-and sign-in with Client ID Metadata Documents arrived in 0.10.0. If a tool that
+and sign-in with Client ID Metadata Documents arrived in 0.10.0; the compact
+`inspect-page` locator map as the default view and `load-tools` (`--tools=auto`)
+arrived in 0.11.0. If a tool that
 writes returns `declined: true`, the user said no: do not retry the write, show
 them the proposed change instead. If `doctor` says a newer version is out, pass its upgrade command on to
 the user.
@@ -288,7 +290,7 @@ with the commit it tested. `analyze-history` views:
   `selector` for one region) returns the accessibility snapshot and a
   `toMatchAriaSnapshot` assertion to paste into a spec.
 - **Set up CI:** when the user wants the same diagnosis on every pull request,
-  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.10.0`) or the
+  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.11.0`) or the
   `npx -y playwright-e2e-mcp ci` command in `references/setup.md`. It writes the
   run, flaky verdicts and fix diffs to the job summary and one PR comment.
 - **Accessibility:** `audit-accessibility` with `url` runs axe-core against
