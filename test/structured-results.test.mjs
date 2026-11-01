@@ -74,7 +74,7 @@ test('only tools with their own fields declare a schema', () => {
   }
   assert.equal(outputSchemaFor('inspect-page'), undefined);
   // Each schema keeps only its tool's fields.
-  assert.deepEqual(Object.keys(outputSchemaFor('suggest-fix').shape).sort(), ['applied', 'error', 'fix', 'ok', 'verified']);
+  assert.deepEqual(Object.keys(outputSchemaFor('suggest-fix').shape).sort(), ['applied', 'declined', 'error', 'fix', 'ok', 'verified']);
 });
 
 test('toolText and toolError carry the envelope', () => {

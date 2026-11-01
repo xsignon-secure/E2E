@@ -24,6 +24,8 @@ import {
   runBrowserScript,
   toolError,
   toolText,
+  confirmBeforeWrite,
+  declinedResult,
 } from './shared.js';
 import { assertUrlAllowed } from '../utils/url-policy.js';
 import { parseLocator } from '../utils/locator-expr.js';
@@ -194,6 +196,15 @@ export const compareVisualStateTool = {
         // 2. First call (or action: 'baseline') stores the baseline.
         const hasBaseline = await exists(baselinePath);
         if (args.action === 'baseline' || !hasBaseline) {
+          // Replacing a baseline hides every visual change since it was taken.
+          if (hasBaseline) {
+            const confirmed = await confirmBeforeWrite(
+              ctx,
+              `Replace the visual baseline for ${url}?`,
+              `The new screenshot (${current.width}×${current.height}${args.selector ? `, ${args.selector}` : ''}) becomes the baseline at ${relativeToRoot(root, baselinePath)}. Later comparisons will no longer flag what changed since the old one.`,
+            );
+            if (confirmed === 'declined') return declinedResult(`replacing the baseline for ${url}`);
+          }
           try {
             await writeFileInsideRoot(baselinePath, shot, root);
             await writeFileInsideRoot(metaPath, JSON.stringify(meta, null, 2), root);

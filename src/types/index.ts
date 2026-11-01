@@ -140,6 +140,12 @@ export interface ToolContext {
    * asked for it with a progress token.
    */
   progress?: (progress: number, total?: number, message?: string) => void;
+  /**
+   * Ask the person before changing files (see utils/confirm.ts). Throws
+   * ConfirmationPending when the client has to show the question first.
+   * Absent in direct calls (tests, the CLI), which never ask.
+   */
+  confirmWrite?: (request: { title: string; detail: string }) => Promise<'approved' | 'declined' | 'not-asked'>;
 }
 
 /**

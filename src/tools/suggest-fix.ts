@@ -52,6 +52,8 @@ import {
   runBrowserScript,
   sessionShape,
   toolText,
+  confirmBeforeWrite,
+  declinedResult,
 } from './shared.js';
 import { allFailures } from './get-failure.js';
 
@@ -668,8 +670,11 @@ export const suggestFixTool = {
       }
       const patched = [...lines];
       patched[proposal.lineNo - 1] = proposal.after;
+      const confirmed = await confirmBeforeWrite(ctx, `Apply this fix to ${failure.file}:${proposal.lineNo}?`, diff);
+      if (confirmed === 'declined') return declinedResult(`the fix to ${failure.file}:${proposal.lineNo}`, { fix, applied: false });
       await writeFileInsideRoot(specPath, patched.join(eol), root);
       out.push(`**Applied** to \`${failure.file}:${proposal.lineNo}\`.`, '');
+      if (confirmed === 'approved') out.push('> ✅ You confirmed this change.', '');
 
       if (args.verify === false) {
         out.push('> Not verified (verify: false). Re-run with **run-test** to check it.');

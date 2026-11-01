@@ -19,7 +19,7 @@ described by each tool's `outputSchema`:
 | `get-failure` | `failure` (as above, plus `expected` and `actual`), `index`, `total` |
 | `list-tests` | `tests[]` (`file`, `line`, `title`, `project`), `total`, `truncated` |
 | `diagnose-flaky` | `verdict` (the worst one), `tests[]` with `verdict`, `passed`, `failed` per test |
-| `suggest-fix` | `fix` (`file`, `line`, `before`, `after`, `kind`, `confidence`, `why`, `alternatives`), `applied`, `verified` |
+| `suggest-fix` | `fix` (`file`, `line`, `before`, `after`, `kind`, `confidence`, `why`, `alternatives`), `applied`, `verified`, `declined` |
 | `audit-accessibility` | `url`, `violations[]` (`id`, `impact`, `help`, `helpUrl`, `count`) |
 | `audit-performance` | `url`, `metrics[]` (`id`, `value`, `unit`, `rating`, `budget`, `overBudget`) |
 | `audit-tests` | `findings[]` (`file`, `line`, `rule`, `severity`, `message`, `fix`, `test`), `total`, `truncated`, `applied`, `verified` |
@@ -426,6 +426,9 @@ numbers from one headless Chromium; field data (CrUX, RUM) can differ.
 | `storageState` / `headers` | — | For `url`, as in [Page state](#page-state-signed-in-pages-headers-and-steps) |
 | `config` / `timeoutMs` / `projectRoot` | — | As with `run-test` |
 
+Before writing, the server asks you to confirm the diff when your client supports MCP
+elicitation (see [Asking before changing files](#asking-before-changing-files)).
+
 Three kinds of fix:
 
 - **Ambiguous locator.** A strict mode violation ("resolved to 2 elements") lists each match
@@ -659,3 +662,22 @@ team share it:
 | MCP client disconnects | Per-request `AbortSignal` kills the run; stdin end triggers shutdown, and every tracked child tree is force-killed (`killActiveChildren`) |
 | Disk full | `ENOSPC` detected → `DISK_FULL` with a "free space" hint; logging never throws |
 | Malicious paths | `../../etc/passwd`, absolute paths outside the root, a `projectRoot` outside the allowed roots, symlinks that leave the root, URLs and null bytes are rejected with `INVALID_PATH`; extra CLI args must be allowlisted Playwright flags |
+
+## Asking before changing files
+
+Tools that change your project ask first, when the client can show a question (MCP
+elicitation): `suggest-fix` with `apply: true`, `audit-tests` with `fix: true`,
+`generate-e2e-test` when it writes the new spec, `quarantine` add and remove, and
+`compare-visual-state` when it would replace an existing baseline. The question shows the exact
+change (the diff, the new file, the quarantine entry). A yes covers only that change: if the
+retried call would write something else, you are asked again. A no writes nothing and the result
+says `declined: true` (`generate-e2e-test` still returns the code).
+
+On the 2026-07-28 protocol the question travels as an `input_required` result, and the client
+retries the call with your answer. On 2025 connections the server sends a normal elicitation
+request; the stateless HTTP bridge cannot do that for 2025 clients, so there it writes as before.
+
+`PW_MCP_CONFIRM_WRITES` sets the policy: `auto` (default) asks when the client can and writes as
+before when it can't; `always` refuses to write in clients that can't ask; `off` never asks.
+The confirmation is shown by your client. It helps people stay in control; it is not a security
+boundary against a client that answers for them.

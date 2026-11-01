@@ -43,6 +43,7 @@ import {
   runBrowserScript,
   toolError,
   toolText,
+  confirmBeforeWrite,
 } from './shared.js';
 import type { ResolvedPageState } from './shared.js';
 import { assertUrlAllowed } from '../utils/url-policy.js';
@@ -453,14 +454,20 @@ async function walkFlow(
 
   const lines: string[] = [`## 🧪 Walked and generated — "${args.description}"`, ''];
   let targetPath: string | undefined;
+  let declined = false;
   if (args.write !== false) {
-    targetPath = await prepareTarget(args, root, testDir);
-    await writeFileInsideRoot(targetPath, spec, root);
-    ctx.logger.info('walked test written', { file: targetPath, steps: steps.length });
-    lines.push(`**File:** \`${relativeToRoot(root, targetPath)}\` (written)`);
-  } else {
-    lines.push('_Not written (`write: false`) — code below._');
+    const candidate = await prepareTarget(args, root, testDir);
+    const confirmed = await confirmBeforeWrite(ctx, `Write the new test ${relativeToRoot(root, candidate)}?`, spec);
+    if (confirmed === 'declined') {
+      declined = true;
+    } else {
+      targetPath = candidate;
+      await writeFileInsideRoot(targetPath, spec, root);
+      ctx.logger.info('walked test written', { file: targetPath, steps: steps.length });
+      lines.push(`**File:** \`${relativeToRoot(root, targetPath)}\` (written${confirmed === 'approved' ? ', you confirmed it' : ''})`);
+    }
   }
+  if (!targetPath) lines.push(declined ? '_Not written: you declined. The code is below._' : '_Not written (`write: false`) — code below._');
   lines.push(
     `**Walked:** ${steps.length} step(s) from ${entryUrl}${data.finalUrl && data.finalUrl !== entryUrl ? ` → ${data.finalUrl}` : ''}, every locator acted on the live page`,
   );
@@ -619,17 +626,24 @@ export const generateE2ETestTool = {
       const spec = buildSpec({ description: args.description, entryUrl, selectors: ranked, live });
 
       let targetPath: string | undefined;
+      let confirmed: Awaited<ReturnType<typeof confirmBeforeWrite>> = 'not-asked';
       const shouldWrite = args.write !== false;
       if (shouldWrite) {
-        targetPath = await prepareTarget(args, root, detection.testDir ?? undefined);
-        await writeFileInsideRoot(targetPath, spec, root);
-        ctx.logger.info('generated test written', { file: targetPath, selectors: ranked.length });
+        const candidate = await prepareTarget(args, root, detection.testDir ?? undefined);
+        confirmed = await confirmBeforeWrite(ctx, `Write the new test ${relativeToRoot(root, candidate)}?`, spec);
+        if (confirmed !== 'declined') {
+          targetPath = candidate;
+          await writeFileInsideRoot(targetPath, spec, root);
+          ctx.logger.info('generated test written', { file: targetPath, selectors: ranked.length });
+        }
       }
 
       // 5. Render.
       const lines: string[] = [`## 🧪 Generated test — "${args.description}"`, ''];
       if (targetPath) {
-        lines.push(`**File:** \`${relativeToRoot(root, targetPath)}\` (written)`);
+        lines.push(`**File:** \`${relativeToRoot(root, targetPath)}\` (written${confirmed === 'approved' ? ', you confirmed it' : ''})`);
+      } else if (confirmed === 'declined') {
+        lines.push('_Not written: you declined. The code is below._');
       } else {
         lines.push('_Not written (`write: false`) — code below._');
       }

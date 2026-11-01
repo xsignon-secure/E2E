@@ -23,7 +23,7 @@ import {
 } from '../utils/quarantine.js';
 import type { QuarantineEntry } from '../utils/quarantine.js';
 import { readHistory, testStats } from '../utils/run-history.js';
-import { guard, markdownCell, resolveProjectRoot, toolText } from './shared.js';
+import { confirmBeforeWrite, declinedResult, guard, markdownCell, resolveProjectRoot, toolText } from './shared.js';
 
 const quarantineInput = z.object({
   action: z.enum(['list', 'add', 'remove']).optional().describe("'list' (default), 'add' or 'remove'"),
@@ -122,6 +122,12 @@ export const quarantineTool = {
         if (!existing) {
           return toolText(renderList(list.entries, `> Nothing to remove: \`${test.file}\` › ${test.title} is not quarantined.`), { status: 'unchanged', total: list.entries.length });
         }
+        const confirmed = await confirmBeforeWrite(
+          ctx,
+          `Remove ${existing.file} › ${existing.title} from the quarantine?`,
+          `Its failures will fail runs again. Owner: ${existing.owner}. Reason: ${existing.reason}. Was until ${existing.until}.`,
+        );
+        if (confirmed === 'declined') return declinedResult(`removing ${existing.file} › ${existing.title} from the quarantine`, { status: 'unchanged', total: list.entries.length });
         list.entries = list.entries.filter((e) => e !== existing);
         await writeQuarantine(root, list);
         return toolText(renderList(list.entries, `> ✅ Removed \`${existing.file}\` › ${existing.title}: its failures block runs again.`), { status: 'removed', total: list.entries.length });
@@ -141,6 +147,12 @@ export const quarantineTool = {
         until: addDays(today(), days),
         added: existing?.added ?? today(),
       };
+      const confirmed = await confirmBeforeWrite(
+        ctx,
+        `${existing ? 'Extend the quarantine of' : 'Quarantine'} ${entry.file} › ${entry.title} until ${entry.until}?`,
+        `Its failures will stop failing runs until ${entry.until} (${days} days). It still runs and is reported.\nOwner: ${entry.owner}\nReason: ${entry.reason}\nWritten to playwright-quarantine.json.`,
+      );
+      if (confirmed === 'declined') return declinedResult(`quarantining ${entry.file} › ${entry.title}`, { status: 'unchanged', total: list.entries.length });
       list.entries = [...list.entries.filter((e) => e !== existing), entry];
       await writeQuarantine(root, list);
 
