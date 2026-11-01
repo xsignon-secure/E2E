@@ -9,6 +9,7 @@ test/
 e2e/
 scripts/
 docs/
+history-server/
 coverage/
 dist-mcpb/
 *.mcpb

@@ -22,7 +22,7 @@ import {
 } from '../utils/run-history.js';
 import type { HistoryEntry, TestStats } from '../utils/run-history.js';
 import { PlaywrightMcpError } from '../types/index.js';
-import { fetchRuns, mergeRuns, proProjectName, proSettings } from '../utils/pro-client.js';
+import { fetchRuns, mergeRuns, historyProjectName, historySettings } from '../utils/history-client.js';
 import {
   clipLines,
   formatDuration,
@@ -43,7 +43,7 @@ const analyzeHistoryInput = z.object({
   source: z
     .enum(['local', 'cloud', 'both'])
     .optional()
-    .describe("With a Pro key: 'both' (default) merges this machine's runs with CI runs from Pro Cloud; 'cloud' or 'local' for one side"),
+    .describe("With a shared history server (PW_MCP_HISTORY_URL): 'both' (default) merges this machine's runs with CI runs from it; 'cloud' or 'local' for one side"),
   projectRoot: z.string().optional(),
 });
 
@@ -73,27 +73,27 @@ function header(entries: HistoryEntry[], requested: number, note?: string): stri
 }
 
 /**
- * Local runs, plus Pro Cloud runs when a Pro key is set. Without a key this
+ * Local runs, plus the shared history server's runs when one is set. Without it this
  * is exactly the local history and nothing leaves the machine.
  */
 async function loadEntries(root: string, requested: number, source: AnalyzeHistoryInput['source']): Promise<{ entries: HistoryEntry[]; note?: string }> {
-  const settings = proSettings();
+  const settings = historySettings();
   const wanted = source ?? (settings ? 'both' : 'local');
   if (wanted === 'local') return { entries: await readHistory(root, requested) };
   if (!settings) {
-    throw new PlaywrightMcpError('Cloud history needs a Pro key', 'INVALID_INPUT', {
-      hint: "Set PW_MCP_PRO_KEY and PW_MCP_PRO_URL, or use source: 'local'.",
+    throw new PlaywrightMcpError('Cloud history needs a shared history server', 'INVALID_INPUT', {
+      hint: "Set PW_MCP_HISTORY_URL and PW_MCP_HISTORY_TOKEN (self-host history-server/ from the repo, free), or use source: 'local'.",
     });
   }
   const local = wanted === 'both' ? await readHistory(root, requested) : [];
-  const project = await proProjectName(root);
+  const project = await historyProjectName(root);
   try {
     const cloud = await fetchRuns(settings, project, requested);
     const entries = mergeRuns(local, cloud, requested);
-    return { entries, note: `**Source:** ${wanted === 'both' ? `${local.length} local run(s) + ` : ''}${cloud.length} Pro Cloud run(s) for \`${project}\`` };
+    return { entries, note: `**Source:** ${wanted === 'both' ? `${local.length} local run(s) + ` : ''}${cloud.length} shared run(s) for \`${project}\`` };
   } catch (error) {
     if (wanted === 'cloud') throw error;
-    return { entries: local, note: `**Source:** local only; Pro Cloud failed: ${(error as Error).message}` };
+    return { entries: local, note: `**Source:** local only; the history server failed: ${(error as Error).message}` };
   }
 }
 

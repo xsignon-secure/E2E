@@ -67,7 +67,7 @@ red at HEAD ─▶ bisect-failure (runs it across git history, names the breakin
 - **Lean.** With the `core` tool set, finding and fixing a broken locator took about **5,500 tokens**
   versus about **7,900** with Playwright MCP plus a shell. All 19 tools add about 16k tokens of
   definitions to every request, so load only the [profiles](#configuration) you use ([benchmark](#benchmark)).
-- **Free and open source.** MIT, no account, no API key, no telemetry. Every tool is free; an optional paid Pro only adds hosted CI history.
+- **Free and open source.** MIT, no account, no API key, no telemetry. Every tool and feature is free, including the shared team history server you can host yourself.
 
 ## 🚀 What only this MCP does
 
@@ -479,12 +479,18 @@ steps:
       # args: --browser chromium tests/checkout
 ```
 
-A complete, ready-to-copy workflow is available in [`examples/github-actions/playwright-e2e.yml`](examples/github-actions/playwright-e2e.yml), including artifact upload and commented options for `guard: true` and Pro Cloud.
+A complete, ready-to-copy workflow is available in [`examples/github-actions/playwright-e2e.yml`](examples/github-actions/playwright-e2e.yml), including artifact upload and commented options for `guard: true` and a shared history server.
 
 **GitLab CI:** [`examples/gitlab-ci/playwright-e2e.yml`](examples/gitlab-ci/playwright-e2e.yml) runs the heal guard on merge requests, the same `ci` diagnosis, and posts the report as a merge request comment when you give it a project access token. Any other CI (Jenkins, CircleCI, AWS CodeBuild) works the same way: run `npx -y playwright-e2e-mcp ci --output e2e-report.md` and keep the file.
 
+**Team history across machines (free, self-hosted):** CI runs normally stay on the CI machine.
+Run the [history server](history-server/README.md) from this repo (one `docker run`, or a free
+Vercel, Azure or any Node host), give the Action `history-url` and `history-token`, and every
+CI run lands in one history that `analyze-history` on your laptop and the server's dashboard
+both read. No account, no billing; you hand out the tokens.
+
 Inputs: `project-root`, `args`, `flaky-runs`, `suggest`, `comment`, `review`,
-`verify-fixes`, `guard`, `pro-key`, `pro-url`, `fail-on-failure`, `version`, `github-token`. Outputs: `exit-code`,
+`verify-fixes`, `guard`, `history-token`, `history-url`, `fail-on-failure`, `version`, `github-token`. Outputs: `exit-code`,
 `report`, `guard`.
 
 Quarantined tests (`playwright-quarantine.json`, see [`quarantine`](docs/tools.md#quarantine))
@@ -516,7 +522,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |
-| `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` | — | Optional, paid: Pro key and Pro Cloud address. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `pro-key` / `pro-url` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere |
+| `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` | — | Optional: your team's [history server](history-server/README.md) (free, self-hosted) and a token from it. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `history-url` / `history-token` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere. The 0.7/0.8 names `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` still work |
 | `PW_MCP_HISTORY` | on | `0` stops recording runs to `.playwright-e2e-mcp/history.jsonl` |
 | `PW_MCP_ALLOWED_ROOTS` | — | Extra directories a caller may pass as `projectRoot` (`:`-separated, `;` on Windows). Anything outside these and the default root is rejected |
 | `PW_MCP_HTTP_TOKEN` | — | HTTP bridge only: bearer token that unlocks all tools: 16+ characters, 32+ recommended (see [Hosted endpoint](docs/hosted-endpoint.md)) |
@@ -574,9 +580,9 @@ A real `run-test` call served over stdio by `npx -y playwright-e2e-mcp` against 
 
 ## Free and open source
 
-- **MIT licensed.** Use it, change it, ship it in commercial work; no fees, no feature held back. The optional Pro plan adds a hosted service (CI run history across machines), not tools; nothing here needs it.
+- **MIT licensed.** Use it, change it, ship it in commercial work; no fees, no paid tier, no feature held back. That includes the [team history server](history-server/README.md) that collects CI runs from every machine: it is in this repo, and you host it yourself for free.
 - **No account, no API key, no sign-up.** `npx -y playwright-e2e-mcp init` is the whole setup.
-- **No telemetry.** It never phones home; your tests, traces and run history stay on your machine unless you set a Pro key and upload them. The only other request is `doctor` asking npm for the latest version number when you run it (`--offline` or `PW_MCP_NO_UPDATE_CHECK=1` skips it).
+- **No telemetry.** It never phones home; your tests, traces and run history stay on your machine unless you point it at your own history server and upload them. The only other request is `doctor` asking npm for the latest version number when you run it (`--offline` or `PW_MCP_NO_UPDATE_CHECK=1` skips it).
 - **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and the Playwright your project already has (Apache-2.0).
 - **Free to host yourself**, too: the HTTP bridge deploys to a free Vercel account (see [Hosted endpoint](docs/hosted-endpoint.md)).
 

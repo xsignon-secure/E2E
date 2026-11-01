@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team test history · playwright-e2e-mcp</title>
+<style>
+  :root { --bg: #f8fafc; --fg: #0f172a; --muted: #64748b; --card: #fff; --line: #e2e8f0; --accent: #2563eb; --bad: #dc2626; --warn: #d97706; --good: #16a34a; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b1120; --fg: #e2e8f0; --muted: #94a3b8; --card: #111827; --line: #1f2937; --accent: #60a5fa; --bad: #f87171; --warn: #fbbf24; --good: #4ade80; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.lead { color: var(--muted); margin: 0 0 20px; }
+  form, section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input, select { flex: 1 1 240px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+  button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.strip { font-family: ui-monospace, monospace; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  .muted { color: var(--muted); }
+  .err { color: var(--bad); }
+  h2 { font-size: 17px; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Team test history</h1>
+  <p class="lead">Flaky and broken tests across every CI run you upload with <code>playwright-e2e-mcp upload</code>.</p>
+  <form id="auth">
+    <label for="key">Token</label>
+    <div class="row">
+      <input id="key" type="password" autocomplete="off" placeholder="A token from this server's HISTORY_TOKENS">
+      <button type="submit">Open</button>
+    </div>
+    <p class="muted">The key stays in this tab only.</p>
+  </form>
+  <section id="projects" hidden>
+    <label for="project">Project</label>
+    <div class="row"><select id="project"></select></div>
+  </section>
+  <div id="out"></div>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
