@@ -68,7 +68,7 @@ becomes the last run for `get-failure`, `suggest-fix` and `diagnose-flaky`.
 | `view` | `elements` \| `locators` \| `aria` | `locators`: compact map of interactive elements with verified locators; `aria` (0.5.0+): accessibility snapshot of the page or of `selector`, with a `toMatchAriaSnapshot` assertion |
 | `storageState` | string | Playwright storageState JSON inside the project (signed-in session); defaults to `PW_MCP_STORAGE_STATE` |
 | `headers` | object | Extra HTTP headers |
-| `actions` | array | Up to 20 steps after load: `{ type: click\|dblclick\|fill\|press\|check\|uncheck\|select\|hover\|wait\|goto, locator?, value?, url?, ms? }`. Locators may start with `frameLocator('#frame')` or use `.contentFrame()` for iframes (0.6.1+) |
+| `actions` | array | Up to 20 steps after load: `{ type: click\|dblclick\|fill\|press\|check\|uncheck\|select\|hover\|wait\|goto, locator?, value?, url?, ms? }`. Locators may start with `frameLocator('#frame')` or use `.contentFrame()` for iframes (0.6.1+). `{ type: 'switchTab', value?: 'last'\|'first'\|'2'\|text in URL or title }` moves to a popup or new tab (0.8.0+) |
 | `actionTimeoutMs` | number | How long each action waits for its element (0.6.1+, default 10000) |
 | `routes` | array | Up to 20 network mocks before load, first match wins: `{ url (glob), method?, status?, json? \| body?, contentType?, headers?, abort?, delayMs? }` (0.5.0+). The result reports hits per mock |
 | `har` | object | `{ path, mode?: replay\|record, url?, notFound?: abort\|fallback }` (0.5.0+): replay requests from a HAR inside the project, or record the traffic to one. `routes` still win |

@@ -17,9 +17,16 @@ import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { createMcpHandler, hostHeaderValidationResponse } from '@modelcontextprotocol/server';
 import type { McpHttpHandler } from '@modelcontextprotocol/server';
-import { createOAuthServer } from './oauth.js';
+import { createOAuthServer, originOf } from './oauth.js';
+import {
+  AI_CATALOG_MEDIA_TYPE,
+  DISCOVERY_CORS_HEADERS,
+  SERVER_CARD_MEDIA_TYPE,
+  buildAiCatalog,
+  buildServerCard,
+} from './discovery.js';
 import { clientAddress, createAttemptLimiter } from './utils/attempt-limiter.js';
-import { createServer, READ_ONLY_TOOLS } from './server.js';
+import { createServer, READ_ONLY_TOOLS, SERVER_VERSION, supportedProtocolVersions } from './server.js';
 import { setMaxChildren, setScrubChildEnv } from './utils/playwright-runner.js';
 import { setBlockPrivateUrls } from './utils/url-policy.js';
 import { logger } from './utils/logger.js';
@@ -107,6 +114,46 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
   });
 }
 
+/**
+ * Public discovery documents (Server Card extension, SEP-2127): the card at
+ * `<mcp-url>/server-card` and the AI Catalog at
+ * `/.well-known/ai-catalog.json`. They hold only public metadata (no tools,
+ * no secrets), so they are served before authentication, with open CORS.
+ * Vercel rewrites both paths to the function with `mcp_route` set.
+ * Returns undefined for every other request.
+ */
+export function discoveryResponse(request: Request, mcpPath: string, tokenProtected: boolean): Response | undefined {
+  const url = new URL(request.url);
+  const routed = url.searchParams.get('mcp_route');
+  const isCard = routed === 'server-card' || url.pathname.endsWith('/server-card');
+  const isCatalog = routed === 'ai-catalog' || url.pathname === '/.well-known/ai-catalog.json';
+  if (!isCard && !isCatalog) return undefined;
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: DISCOVERY_CORS_HEADERS });
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return jsonResponse(405, { error: 'method not allowed' }, { ...DISCOVERY_CORS_HEADERS, allow: 'GET, HEAD, OPTIONS' });
+  }
+  const origin = originOf(request);
+  // A direct `<path>/server-card` names its own endpoint; the rewritten form
+  // and the catalog use the configured MCP path.
+  const endpointPath = isCard && !routed ? url.pathname.slice(0, -'/server-card'.length) || '/' : mcpPath;
+  const body = isCard
+    ? buildServerCard({
+        endpoint: `${origin}${endpointPath}`,
+        version: SERVER_VERSION,
+        tokenProtected,
+        protocolVersions: supportedProtocolVersions(),
+      })
+    : buildAiCatalog(`${origin}${mcpPath}/server-card`, new URL(origin).hostname);
+  return new Response(request.method === 'HEAD' ? null : JSON.stringify(body, null, 2), {
+    status: 200,
+    headers: {
+      'content-type': isCard ? SERVER_CARD_MEDIA_TYPE : AI_CATALOG_MEDIA_TYPE,
+      'cache-control': 'public, max-age=3600',
+      ...DISCOVERY_CORS_HEADERS,
+    },
+  });
+}
+
 /** Build the fetch-shaped MCP handler backed by a fresh server per request. */
 export function createMcpHttpHandler(options: McpHttpHandlerOptions = {}): McpHttpHandler {
   const token = (options.token ?? process.env.PW_MCP_HTTP_TOKEN ?? '').trim();
@@ -135,10 +182,11 @@ export function createMcpHttpHandler(options: McpHttpHandlerOptions = {}): McpHt
   });
   // With a token, OAuth clients (claude.ai connectors) sign in by typing it
   // on the authorize page; without one the endpoint is open and needs none.
+  const mcpPath = options.mcpPath ?? '/api/mcp';
   const oauth = token
     ? createOAuthServer({
         token,
-        mcpPath: options.mcpPath ?? '/api/mcp',
+        mcpPath,
         limiter,
         redirectHosts: options.redirectHosts ?? envList(process.env.PW_MCP_OAUTH_REDIRECT_HOSTS),
       })
@@ -162,6 +210,8 @@ export function createMcpHttpHandler(options: McpHttpHandlerOptions = {}): McpHt
         const rejected = hostHeaderValidationResponse(request, allowedHosts);
         if (rejected) return rejected;
       }
+      const discovery = discoveryResponse(request, mcpPath, Boolean(token));
+      if (discovery) return discovery;
       if (oauth) {
         const oauthResponse = await oauth.handle(request);
         if (oauthResponse) return oauthResponse;

@@ -76,7 +76,7 @@ function escapeHtml(value: string): string {
 }
 
 /** Origin as the client saw it (Vercel terminates TLS and forwards the scheme). */
-function originOf(request: Request): string {
+export function originOf(request: Request): string {
   const url = new URL(request.url);
   const proto = request.headers.get('x-forwarded-proto')?.split(',')[0].trim();
   return `${proto || url.protocol.replace(/:$/, '')}://${url.host}`;
