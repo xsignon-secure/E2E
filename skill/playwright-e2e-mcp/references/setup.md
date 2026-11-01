@@ -84,6 +84,11 @@ Set these in the server's `env` block. None of them are secrets except
 | `PW_MCP_SHUFFLE_SEEDS` | random | Seeds for `diagnose-flaky`'s `order` pass (comma separated), to replay reported orders |
 | `PW_MCP_LOGIN_ENV` | — | Extra variables `save-login` may type through `{{env:NAME}}`, comma separated (default: only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*`) |
 | `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` | — | Optional paid Pro: CI runs uploaded with `upload` show up in `analyze-history` (`source: both`). Unset = no network calls |
+| `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock or HAR answers (0.8.0+) |
+| `PW_MCP_PYTHON` | project venv, then `python3` | The Python used for pytest-playwright projects (0.8.0+) |
+| `PW_MCP_PROTOCOL` | both | `legacy` stops offering the 2026-07-28 MCP revision (0.8.0+) |
+| `PW_MCP_SKILLS` | on | `0` stops serving this skill over the MCP Skills extension (0.8.0+) |
+| `PW_MCP_NO_UPDATE_CHECK` | off | `1` stops `doctor` asking npm whether a newer version is out (0.8.0+) |
 | `PW_MCP_HISTORY` | on | `0` stops recording runs to `<project>/.playwright-e2e-mcp/history.jsonl` (this turns off `analyze-history`) |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` or `silent` |
 | `PW_MCP_HTTP_TOKEN` | none | HTTP bridge only: bearer token that unlocks all tools |
@@ -114,7 +119,7 @@ Exit code 0 means passed, 1 tests failed, 2 the run itself failed. On GitHub
 Actions it also writes to the job summary. As an Action:
 
 ```yaml
-- uses: xsignon-secure/E2E@v0.7.0
+- uses: xsignon-secure/E2E@v0.8.0
   with:
     flaky-runs: 3
     suggest: 2

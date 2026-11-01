@@ -18,7 +18,7 @@ test('an empty folder fails on the config and on Playwright, with fixes', async 
   const root = tempProject();
   const home = tempProject();
   try {
-    const report = await runDoctorChecks(root, home);
+    const report = await runDoctorChecks(root, home, { update: { offline: true } });
     assert.equal(report.ok, false);
     assert.equal(byName(report, 'Node.js').status, 'ok');
     assert.equal(byName(report, 'Playwright config').status, 'fail');
@@ -47,7 +47,7 @@ test('a set-up project passes the config, install, tests, clients and skill chec
     mkdirSync(path.join(root, '.agents', 'skills', 'playwright-e2e-mcp'), { recursive: true });
     writeFileSync(path.join(root, '.agents', 'skills', 'playwright-e2e-mcp', 'SKILL.md'), '# skill');
 
-    const report = await runDoctorChecks(root, home);
+    const report = await runDoctorChecks(root, home, { update: { offline: true } });
     assert.equal(byName(report, 'Playwright config').status, 'ok');
     assert.match(byName(report, 'Playwright').detail, /^@playwright\/test \d/);
     // Browser state depends on the machine; the check must still be there.
@@ -66,7 +66,7 @@ test('runDoctor prints JSON, exits 1 on a failure and 2 on bad arguments', async
   const root = tempProject();
   try {
     let printed = '';
-    const code = await runDoctor(['--project-root', root, '--json'], (t) => {
+    const code = await runDoctor(['--project-root', root, '--json', '--offline'], (t) => {
       printed += t;
     });
     assert.equal(code, 1);

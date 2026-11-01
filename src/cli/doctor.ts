@@ -18,6 +18,7 @@ import { parseArgs } from 'node:util';
 import { detectProject, findTestFiles } from '../utils/project-detector.js';
 import { SERVER_VERSION } from '../server.js';
 import { SERVER_NAME, SKILL_NAME } from './init.js';
+import { checkForUpdate, UPGRADE_HINT, type UpdateCheckOptions } from '../utils/update-check.js';
 
 export const DOCTOR_USAGE = [
   'Usage: playwright-e2e-mcp doctor [options]',
@@ -27,8 +28,12 @@ export const DOCTOR_USAGE = [
   '',
   '  --project-root <dir>   project directory (default: cwd)',
   '  --json                 print the checks as JSON',
+  '  --offline              skip asking npm whether a newer version exists',
+  '                         (also PW_MCP_NO_UPDATE_CHECK=1)',
   '',
 ].join('\n');
+
+const REPO_URL = 'https://github.com/xsignon-secure/E2E';
 
 /** Oldest Node major the server supports. */
 export const MIN_NODE_MAJOR = 22;
@@ -121,8 +126,37 @@ function browserChecks(root: string, playwrightPackage: string): DoctorCheck[] {
   return [{ name: 'Browsers', status: 'ok', detail: `installed: ${installed.join(', ')}${missing.length ? ` (not installed: ${missing.join(', ')})` : ''}` }];
 }
 
-export async function runDoctorChecks(projectRoot: string, home = os.homedir()): Promise<DoctorReport> {
-  const checks: DoctorCheck[] = [nodeCheck()];
+/**
+ * The running version against the latest on npm. A newer release is a
+ * warning with the upgrade commands; an unreachable registry is not a
+ * problem with the setup, so it stays `ok` and says it could not check.
+ */
+export async function versionCheck(options: UpdateCheckOptions = {}): Promise<DoctorCheck> {
+  const status = await checkForUpdate(SERVER_VERSION, options);
+  switch (status.state) {
+    case 'outdated':
+      return {
+        name: 'Version',
+        status: 'warn',
+        detail: `${status.current} is running; ${status.latest} is out (release notes: ${REPO_URL}/releases/tag/v${status.latest})`,
+        fix: UPGRADE_HINT,
+      };
+    case 'current':
+      return { name: 'Version', status: 'ok', detail: `${status.current} (latest)` };
+    case 'ahead':
+      return { name: 'Version', status: 'ok', detail: `${status.current} (newer than npm's ${status.latest})` };
+    default:
+      return { name: 'Version', status: 'ok', detail: `${status.current} (did not check for updates: ${status.reason})` };
+  }
+}
+
+export interface DoctorOptions {
+  /** Options for the npm version check; `{ offline: true }` skips it. */
+  update?: UpdateCheckOptions;
+}
+
+export async function runDoctorChecks(projectRoot: string, home = os.homedir(), options: DoctorOptions = {}): Promise<DoctorReport> {
+  const checks: DoctorCheck[] = [nodeCheck(), await versionCheck(options.update)];
   const detection = await detectProject(projectRoot);
   const root = detection.root;
 
@@ -194,8 +228,6 @@ export async function runDoctorChecks(projectRoot: string, home = os.homedir()):
   return { version: SERVER_VERSION, projectRoot, checks, ok: !checks.some((c) => c.status === 'fail') };
 }
 
-const REPO_URL = 'https://github.com/xsignon-secure/E2E';
-
 const MARK: Record<CheckStatus, string> = { ok: '✓', warn: '!', fail: '✗' };
 
 export function renderDoctorReport(report: DoctorReport): string {
@@ -221,18 +253,18 @@ export function renderDoctorReport(report: DoctorReport): string {
 }
 
 export async function runDoctor(argv: string[], out: (text: string) => void = (t) => process.stdout.write(t)): Promise<number> {
-  let values: { 'project-root'?: string; json?: boolean };
+  let values: { 'project-root'?: string; json?: boolean; offline?: boolean };
   try {
     ({ values } = parseArgs({
       args: argv,
       strict: true,
-      options: { 'project-root': { type: 'string' }, json: { type: 'boolean' } },
+      options: { 'project-root': { type: 'string' }, json: { type: 'boolean' }, offline: { type: 'boolean' } },
     }));
   } catch (err) {
     out(`doctor: ${(err as Error).message}\n\n${DOCTOR_USAGE}`);
     return 2;
   }
-  const report = await runDoctorChecks(path.resolve(values['project-root'] ?? '.'));
+  const report = await runDoctorChecks(path.resolve(values['project-root'] ?? '.'), os.homedir(), { update: { offline: values.offline } });
   out(values.json ? `${JSON.stringify(report, null, 2)}\n` : renderDoctorReport(report));
   return report.ok ? 0 : 1;
 }

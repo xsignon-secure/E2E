@@ -8,7 +8,9 @@ order. Every step is safe to repeat.
 
 - Node.js 22 or newer: `node --version`.
 - The project uses Playwright Test. If `@playwright/test` is not in `package.json`, ask the
-  user before adding it (`npm install -D @playwright/test`).
+  user before adding it (`npm install -D @playwright/test`). A Python project that uses
+  `pytest-playwright` works too (0.8.0+): it needs `pip install pytest-playwright` and
+  `playwright install chromium` in its Python environment instead.
 - A browser for Playwright: `npx playwright install chromium`.
 
 ## 2. Install the server and the skill
@@ -61,7 +63,8 @@ For any other MCP client, add this server to its config:
 
 1. Run `npx -y playwright-e2e-mcp doctor` in the project root. It checks Node, the
    Playwright config and install, the browsers, the test files and the client setup,
-   and prints the command that fixes anything marked ✗. Fix those first.
+   and prints the command that fixes anything marked ✗. Fix those first. It also says
+   when a newer version of the server is out.
 2. Tell the user to restart or reload their agent so it loads the new server.
 3. After the reload, call the `list-tests` tool (or `run-test`) with the project root. A
    result listing the tests means the install worked.
@@ -75,6 +78,15 @@ Environment variables, set in the server entry's `env`:
 - `PW_MCP_PROJECT_ROOT`: default project root (default: the client's working directory).
 - `PW_MCP_TOOLS`: limit the exposed tools, for example `core`.
 - `PW_MCP_ALLOWED_ROOTS`: extra directories callers may pass as `projectRoot`.
+- `PW_MCP_PYTHON`: the Python to use for a pytest-playwright project (default: the
+  project's `.venv`, `venv` or `env`, then `python3`).
+- `PW_MCP_BLOCK_WRITES`: `1` makes the page tools abort POST, PUT, PATCH and DELETE requests.
+
+## Updating
+
+With the `npx -y playwright-e2e-mcp` setup, a restart of the client picks up the newest
+release. For a project install run `npm install -D playwright-e2e-mcp@latest`; to refresh
+the copied skill, run `npx -y playwright-e2e-mcp init` again.
 
 No API keys or accounts are needed.
 
