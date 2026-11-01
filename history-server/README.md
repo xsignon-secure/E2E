@@ -70,7 +70,7 @@ Check it: `curl https://<your-server>/api/v1/health` answers `{"ok":true,...}`, 
 GitHub Action:
 
 ```yaml
-- uses: xsignon-secure/E2E@v0.10.0
+- uses: xsignon-secure/E2E@v0.11.0
   with:
     history-url: https://<your-server>
     history-token: ${{ secrets.PW_MCP_HISTORY_TOKEN }}
