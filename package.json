@@ -1,6 +1,6 @@
 {
   "name": "playwright-e2e-mcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "MCP server and agent skill that run, diagnose and fix failing Playwright tests: CI report diagnosis, trace analysis, verified locator fixes, flaky verdicts, breaking commits, tests written by walking the flow, accessibility and Web Vitals audits.",
   "author": "xsignon-secure (https://github.com/xsignon-secure)",
   "mcpName": "io.github.xsignon-secure/E2E",

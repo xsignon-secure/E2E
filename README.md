@@ -125,7 +125,7 @@ other servers alone:
 
 ```bash
 npx -y playwright-e2e-mcp init            # --client all | cursor,vscode … · --dry-run
-npx -y playwright-e2e-mcp doctor          # checks Node, Playwright, browsers and client setup
+npx -y playwright-e2e-mcp doctor          # checks Node, Playwright, browsers, client setup and updates
 ```
 
 **Or let your agent do it.** Paste this into any coding agent:
@@ -269,8 +269,8 @@ Running and fixing your own tests needs your project, so use the local install f
 | --- | --- |
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.7.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.7.0/playwright-e2e-mcp-0.7.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.8.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.8.0/playwright-e2e-mcp-0.8.0.tgz` |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
@@ -286,6 +286,25 @@ Run my Playwright tests and fix whatever fails.
 
 Your agent should run the suite, read the failure, and propose a fix it has re-run. To check the
 setup without your own tests, ask it to run `examples/sample-test.spec.ts` from this repo.
+
+### Updating
+
+How you get a new release depends on how you installed it:
+
+| Installed with | To update |
+| --- | --- |
+| `npx -y playwright-e2e-mcp` (the setup above, and what `init` writes) | Restart your MCP client. npx (npm 10, which comes with Node 22) asks npm for the latest version on each launch and fetches it. |
+| `npm install -D playwright-e2e-mcp` in the project | `npm install -D playwright-e2e-mcp@latest` |
+| `npm install -g playwright-e2e-mcp` | `npm install -g playwright-e2e-mcp@latest` |
+| GitHub Action `uses: xsignon-secure/E2E@v0.x.y` | Change the tag (Dependabot's `github-actions` updates do it for you) |
+| Docker | `docker pull ghcr.io/xsignon-secure/playwright-e2e-mcp:latest` |
+| Claude Desktop bundle (`.mcpb`) | Download the new bundle from the [latest release](https://github.com/xsignon-secure/E2E/releases/latest) and open it |
+| Git clone | `git pull && npm ci` |
+| Agent skill copied by `init` or `npx skills add` | Run the same command again |
+
+`npx -y playwright-e2e-mcp doctor` tells you whether a newer version is out and prints the
+command for your setup. Upgrade notes for each release are on the
+[releases page](https://github.com/xsignon-secure/E2E/releases).
 
 ## Python projects (pytest-playwright)
 
@@ -314,6 +333,23 @@ in the project, else `python3` / `python`.
 ```bash
 pip install pytest-playwright && playwright install chromium
 ```
+
+## What's new in 0.8
+
+- **Python suites:** projects that use `pytest-playwright` work with `run-test`, `get-failure`
+  and `list-tests`, traces included ([details](#python-projects-pytest-playwright)).
+- **Popups and new tabs:** a `switchTab` step follows the page into a popup or new tab, and
+  results list every open tab.
+- **Look without changing anything:** `blockWrites` (or `PW_MCP_BLOCK_WRITES=1`) stops the page
+  tools from sending POST, PUT, PATCH or DELETE requests to a real backend.
+- **Crashed runs still report:** when Playwright dies before writing its report, the failures
+  that finished are kept and the run is marked partial.
+- **Stricter heal guard:** an assertion inside a `try` whose `catch` swallows the error is
+  blocked, and a web-first assertion without `await` is flagged.
+- **MCP 2026-07-28:** the new stateless protocol revision, cache hints, a server icon, the agent
+  skill served over the Skills extension, and a Server Card for discovery.
+- **Update check:** `doctor` says when a newer version is out and how to update
+  ([Updating](#updating)).
 
 ## What's new in 0.7
 
@@ -432,7 +468,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.7.0
+  - uses: xsignon-secure/E2E@v0.8.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -469,6 +505,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard). All nineteen tool definitions cost about 16k tokens of context per request; `core` costs about 5k (12k and 2.6k with `PW_MCP_OUTPUT_SCHEMAS=0`) |
 | `PW_MCP_OUTPUT_SCHEMAS` | on | `0` leaves the output schemas out of the tool list to save context. Results still carry `structuredContent` (see [Structured results](docs/tools.md#structured-results)) |
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
+| `PW_MCP_NO_UPDATE_CHECK` | off | `1` stops `doctor` from asking npm whether a newer version is out (same as `doctor --offline`) |
 | `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
 | `PW_MCP_PYTHON` | project venv, then `python3` | The Python that runs a pytest-playwright suite |
@@ -535,7 +572,7 @@ A real `run-test` call served over stdio by `npx -y playwright-e2e-mcp` against 
 
 - **MIT licensed.** Use it, change it, ship it in commercial work; no fees, no feature held back. The optional Pro plan adds a hosted service (CI run history across machines), not tools; nothing here needs it.
 - **No account, no API key, no sign-up.** `npx -y playwright-e2e-mcp init` is the whole setup.
-- **No telemetry.** It never phones home; your tests, traces and run history stay on your machine unless you set a Pro key and upload them.
+- **No telemetry.** It never phones home; your tests, traces and run history stay on your machine unless you set a Pro key and upload them. The only other request is `doctor` asking npm for the latest version number when you run it (`--offline` or `PW_MCP_NO_UPDATE_CHECK=1` skips it).
 - **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and the Playwright your project already has (Apache-2.0).
 - **Free to host yourself**, too: the HTTP bridge deploys to a free Vercel account (see [Hosted endpoint](docs/hosted-endpoint.md)).
 
