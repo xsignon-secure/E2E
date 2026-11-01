@@ -1,6 +1,6 @@
 {
   "name": "playwright-e2e-mcp",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Diagnose and fix failing Playwright tests (TypeScript and pytest): CI reports, traces, verified fixes, flaky verdicts, test generation.",
   "mcpServers": {
     "playwright-e2e": {

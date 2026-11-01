@@ -273,8 +273,8 @@ Running and fixing your own tests needs your project, so use the local install f
 | --- | --- |
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.8.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.8.0/playwright-e2e-mcp-0.8.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.9.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.9.0/playwright-e2e-mcp-0.9.0.tgz` |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
@@ -337,6 +337,15 @@ in the project, else `python3` / `python`.
 ```bash
 pip install pytest-playwright && playwright install chromium
 ```
+
+## What's new in 0.9
+
+- **Everything is free, including team history.** The CI history service that used to be a
+  paid add-on is now in this repo as a [self-hosted history server](history-server/README.md)
+  (MIT): one `docker run`, plain Node, or a free Vercel or Azure account. You hand out the
+  tokens; there is no account or billing anywhere.
+- **New names:** `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` and the Action's `history-url` /
+  `history-token`. The old `PW_MCP_PRO_*`, `pro-url` and `pro-key` names keep working.
 
 ## What's new in 0.8
 
@@ -472,7 +481,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.8.0
+  - uses: xsignon-secure/E2E@v0.9.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
