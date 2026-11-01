@@ -273,8 +273,8 @@ Running and fixing your own tests needs your project, so use the local install f
 | --- | --- |
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.9.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.9.0/playwright-e2e-mcp-0.9.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.10.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.10.0/playwright-e2e-mcp-0.10.0.tgz` |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
@@ -337,6 +337,18 @@ in the project, else `python3` / `python`.
 ```bash
 pip install pytest-playwright && playwright install chromium
 ```
+
+## What's new in 0.10
+
+- **Asks before changing your files.** Applying a fix, writing a new test, quarantining a test or
+  replacing a visual baseline now shows you the exact change and waits for your yes, in clients
+  that support MCP questions (elicitation). No writes nothing. `PW_MCP_CONFIRM_WRITES` sets the
+  policy (`auto`, `always`, `off`).
+- **Interactive test report** in Claude, ChatGPT, Cursor and other MCP Apps clients: counts,
+  a filterable list of failures, expected vs. received, and one-click re-run or "Ask to fix".
+  Other clients show the text result as before. `PW_MCP_APPS=0` turns it off.
+- **Newer sign-in for the hosted endpoint:** OAuth clients can identify with a Client ID
+  Metadata Document (the MCP default since 2025-11-25); dynamic registration keeps working.
 
 ## What's new in 0.9
 
@@ -481,7 +493,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.9.0
+  - uses: xsignon-secure/E2E@v0.10.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures

@@ -47,7 +47,7 @@ inputs:
     default: 'true'
   version:
     description: playwright-e2e-mcp version to run from npm
-    default: 0.9.0
+    default: 0.10.0
   github-token:
     description: Token for the PR comment (needs pull-requests write)
     default: ${{ github.token }}
