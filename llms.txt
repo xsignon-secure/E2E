@@ -1,6 +1,6 @@
 # playwright-e2e-mcp
 
-> MCP server that runs, diagnoses and fixes failing Playwright end-to-end tests: structured failures (file:line + kind), trace-based diagnosis (DOM, network, console at the failure), verified locator fixes that re-run and revert if still red, per-test flaky verdicts, CI report diagnosis, run history with the commit that broke each test, tests written by walking the flow on the live page, aria snapshots, accessibility and Web Vitals audits with network mocks and HAR replay, and a GitHub Action. Ships with an agent skill (SKILL.md). MIT, Node 22+, no API keys.
+> MCP server that runs, diagnoses and fixes failing Playwright end-to-end tests: structured failures (file:line + kind), trace-based diagnosis (DOM, network, console at the failure), verified locator fixes that re-run and revert if still red, per-test flaky verdicts, CI report diagnosis, run history with the commit that broke each test, tests written by walking the flow on the live page, aria snapshots, popups and new tabs, read-only page inspection (blockWrites), a heal guard that blocks "fixes" that check less, flaky-test quarantine, saved logins with 2FA, accessibility and Web Vitals audits with network mocks and HAR replay, and a GitHub Action. Works on @playwright/test and pytest-playwright suites. Speaks MCP 2026-07-28 (and 2025 revisions) and serves its agent skill (SKILL.md) over the Skills extension. MIT, Node 22+, no API keys. Current version: 0.8.0.
 
 Install in one command from a project root: `npx -y playwright-e2e-mcp init` (merges the server into Claude Code, Cursor, VS Code, Gemini CLI and Codex project configs and installs the skill).
 
@@ -12,6 +12,10 @@ Install in one command from a project root: `npx -y playwright-e2e-mcp init` (me
 - [Claude Code plugin](https://github.com/xsignon-secure/E2E/blob/main/.claude-plugin/marketplace.json): `/plugin marketplace add xsignon-secure/E2E`, then `/plugin install playwright-e2e-mcp@xsignon-secure`
 - [Gemini CLI extension](https://github.com/xsignon-secure/E2E/blob/main/gemini-extension.json): `gemini extensions install https://github.com/xsignon-secure/E2E`
 - [Agent skill](https://github.com/xsignon-secure/E2E/tree/main/skill/playwright-e2e-mcp): `npx skills add xsignon-secure/E2E`
+
+## Updating
+
+- `npx -y playwright-e2e-mcp` picks up new releases by itself when the client restarts it; `npx -y playwright-e2e-mcp doctor` says whether a newer version is out and prints the command for other install routes.
 
 ## Docs
 

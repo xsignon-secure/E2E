@@ -74,6 +74,10 @@ default. There is no telemetry and no account.
   `analyze-history` and `diagnose-flaky` read it.
 - **The optional Pro client** (`src/utils/pro-client.ts`, `upload` CLI) makes network calls
   only when both `PW_MCP_PRO_KEY` and `PW_MCP_PRO_URL` are set. There is no default URL.
+- **The update check** (`src/utils/update-check.ts`) runs only inside the `doctor` command:
+  one GET to `registry.npmjs.org/playwright-e2e-mcp/latest`, carrying nothing but the
+  package name. The MCP server never calls it; `--offline` or `PW_MCP_NO_UPDATE_CHECK=1`
+  skips it.
 - **Paths are sandboxed.** Every user path must stay inside the project root, checked
   lexically and again with symlinks resolved. Generated files are only ever `*.spec.*` /
   `*.test.*`, and only overwritten when the server wrote them.

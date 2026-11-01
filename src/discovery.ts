@@ -29,7 +29,7 @@ export const REPOSITORY_URL = 'https://github.com/xsignon-secure/E2E';
 export const SERVER_IDENTITY = {
   title: 'Playwright E2E MCP',
   /** At most 100 characters: the Server Card and registry limit. */
-  description: 'Diagnose and fix Playwright tests: CI reports, traces, verified fixes, flaky verdicts, audits.',
+  description: 'Diagnose and fix Playwright tests (TS, pytest): CI reports, traces, verified fixes, flaky verdicts.',
   websiteUrl: `${REPOSITORY_URL}#readme`,
   icons: [
     {

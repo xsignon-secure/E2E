@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.xsignon-secure/E2E",
   "title": "Playwright E2E MCP",
-  "description": "Diagnose and fix Playwright tests: CI reports, traces, verified fixes, flaky verdicts, audits.",
+  "description": "Diagnose and fix Playwright tests (TS, pytest): CI reports, traces, verified fixes, flaky verdicts.",
   "version": "0.8.0",
   "websiteUrl": "https://github.com/xsignon-secure/E2E#readme",
   "repository": {

@@ -91,6 +91,8 @@ async function main(): Promise<void> {
         '  PW_MCP_ALLOWED_ROOTS       extra roots callers may pass as projectRoot',
         '  PW_MCP_BLOCK_PRIVATE_URLS  1 = URL tools refuse private/loopback/metadata addresses',
         '  PW_MCP_PRO_KEY / PW_MCP_PRO_URL  optional Pro Cloud key and address; unset = no network calls',
+        '  PW_MCP_BLOCK_WRITES        1 = page tools abort POST/PUT/PATCH/DELETE no mock answers',
+        '  PW_MCP_PYTHON              Python for pytest-playwright projects (default: project venv, python3)',
         '  PW_MCP_LOGIN_ENV           extra variables save-login may type ({{env:NAME}}), comma separated',
         '  PW_MCP_PROTOCOL            legacy = do not offer the 2026-07-28 MCP revision',
         '  PW_MCP_SKILLS              0 = do not serve the bundled skill over the Skills extension',

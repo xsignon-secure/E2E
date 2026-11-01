@@ -62,6 +62,7 @@ red at HEAD ─▶ bisect-failure (runs it across git history, names the breakin
 - **Fixes are proven, not guessed.** Every fix is re-run before it's kept, and undone if the test is still red.
 - **Honest.** It won't paper over a real bug to make a test pass.
 - **Works on CI failures too.** Load a CI job's report and traces and get the same diagnosis and fixes.
+- **TypeScript and Python.** Works on `@playwright/test` suites and on `pytest-playwright` ones, with the same failure diagnosis and traces.
 - **Flakiness with evidence.** Names the flaky test, whether it's a race, shared state or test order, and the seed that reproduces it.
 - **Lean.** With the `core` tool set, finding and fixing a broken locator took about **5,500 tokens**
   versus about **7,900** with Playwright MCP plus a shell. All 19 tools add about 16k tokens of
@@ -108,6 +109,9 @@ keeps your suite green.
 | 🛡️ | "Did that fix cheat?" | Compares the changed tests with git and blocks a fix that passes by deleting assertions or skipping tests. |
 | 🧊 | "Quarantine this flaky test" | Keeps it running and reported, stops it failing the build, with an owner and an expiry date. |
 | 🔐 | "Test the page after login" | Works behind sign-in with saved sessions, headers and click/fill steps, in Chromium, Firefox or WebKit, and can record or replay network traffic from a HAR file. |
+| 🗂️ | "Check the page that opens in a new tab" | Follows popups and new tabs with a `switchTab` step and lists every open tab. |
+| 🔒 | "Look, but don't change anything" | `blockWrites` stops POST, PUT, PATCH and DELETE requests from reaching the real backend while the AI inspects a page. |
+| 🐍 | "Run my pytest suite" | Runs `pytest-playwright` projects with the same tools: failures with the test's own file and line, the code frame and the trace. |
 | 🤖 | "Do it in CI" | A [GitHub Action and `ci` command](#ci-github-action-and-ci-command) post the diagnosis, flaky verdict and fix diffs on your PR. |
 
 ## Requirements
