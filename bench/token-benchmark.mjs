@@ -143,6 +143,10 @@ async function main() {
     const core = await new Client(process.execPath, [path.join(repoRoot, 'dist', 'index.js')], { PW_MCP_PROJECT_ROOT: project, PW_MCP_TOOLS: 'core', LOG_LEVEL: 'silent' }, repoRoot).init();
     const coreDefs = await core.toolsJson();
     core.close();
+    // auto: the core loop plus load-tools, which loads the rest on request.
+    const auto = await new Client(process.execPath, [path.join(repoRoot, 'dist', 'index.js')], { PW_MCP_PROJECT_ROOT: project, PW_MCP_TOOLS: 'auto', LOG_LEVEL: 'silent' }, repoRoot).init();
+    const autoDefs = await auto.toolsJson();
+    auto.close();
     const run = await ours.call('run-test', { testFiles: ['tests/checkout.spec.ts'], retryOnFailure: false });
     const fix = await ours.call('suggest-fix', {});
     const applied = await ours.call('suggest-fix', { apply: true });
@@ -190,6 +194,7 @@ async function main() {
       ...rows.map(([label, ...counts]) => `| ${label} | ${counts.map((n) => n.toLocaleString('en-US')).join(' | ')} |`),
     ].join('\n');
     const wire = `Full \`tools/list\` on the wire, output schemas and annotations included: ${tokens(coreDefs).toLocaleString('en-US')} (\`core\`), ${tokens(oursDefs).toLocaleString('en-US')} (all tools), ${tokens(pwDefs).toLocaleString('en-US')} (Playwright MCP).`;
+    const autoLine = `With \`--tools=auto\` (the core loop plus \`load-tools\`, which turns on the other tools when the agent asks for them) the model starts with ${modelTokens(autoDefs).toLocaleString('en-US')} tokens of tool definitions instead of ${modelTokens(oursDefs).toLocaleString('en-US')}.`;
     const pageTable = [
       '| Looking at the storefront page | Tokens |',
       '| --- | ---: |',
@@ -209,6 +214,8 @@ async function main() {
       table,
       '',
       wire,
+      '',
+      autoLine,
       '',
       `Fixed and verified by playwright-e2e-mcp without an edit by the agent: **${fixedByUs ? 'yes' : 'no'}**.`,
       '',
@@ -248,7 +255,7 @@ async function main() {
       '',
     ].join('\n');
     writeFileSync(path.join(here, 'RESULTS.md'), md);
-    process.stdout.write(`${table}\n\n${wire}\n\n${pageTable}\n\nFixed and verified: ${fixedByUs ? 'yes' : 'no'}\nWrote bench/RESULTS.md\n`);
+    process.stdout.write(`${table}\n\n${wire}\n\n${autoLine}\n\n${pageTable}\n\nFixed and verified: ${fixedByUs ? 'yes' : 'no'}\nWrote bench/RESULTS.md\n`);
   } finally {
     rmSync(spec, { force: true });
     rmSync(path.join(project, 'test-results'), { recursive: true, force: true });

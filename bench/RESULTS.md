@@ -16,6 +16,8 @@ The `core` column loads only the 7 tools in `PW_MCP_TOOLS=core` (or `--tools=cor
 
 Full `tools/list` on the wire, output schemas and annotations included: 4,788 (`core`), 15,898 (all tools), 5,225 (Playwright MCP).
 
+With `--tools=auto` (the core loop plus `load-tools`, which turns on the other tools when the agent asks for them) the model starts with 2,427 tokens of tool definitions instead of 11,480.
+
 Fixed and verified by playwright-e2e-mcp without an edit by the agent: **yes**.
 
 Route B is a lower bound: it assumes the agent reads one snapshot, writes the right locator first time and re-runs once. It also leaves the reasoning (matching `checkout-button` to "Proceed to checkout" among ~150 elements) to the model, which route A does in the server.
@@ -35,8 +37,8 @@ Writing a new test starts with reading the page. The locator map lists verified 
 ```markdown
 ## 🔎 "Northwind Outfitters"
 
-**URL:** http://127.0.0.1:32795/  
-**Elements:** 140  |  **Viewport:** 1280×720  |  **Took:** 2411ms
+**URL:** http://127.0.0.1:37935/  
+**Elements:** 140  |  **Viewport:** 1280×720  |  **Took:** 2464ms
 
 ### Locator map (80 of 140 visible interactive elements, locators verified unique)
 
@@ -104,7 +106,7 @@ Writing a new test starts with reading the page. The locator map lists verified 
 
 ```markdown
 ### Page
-- Page URL: http://127.0.0.1:32795/
+- Page URL: http://127.0.0.1:37935/
 - Page Title: Northwind Outfitters
 ### Snapshot
 ```yaml

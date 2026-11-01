@@ -37,6 +37,10 @@ Decisions that follow from this:
   loop (run, status, failure, fix, flaky, heal guard, list), about 2.3k tokens. `triage`,
   `inspect` and `author` cover the other jobs. Profiles are resolved in `resolveToolSelection`
   in `src/server.ts`.
+- **Load on request.** `--tools=auto` registers every tool but lists only the core loop and
+  `load-tools`; `load-tools` turns on a profile or named tools and sends one
+  `notifications/tools/list_changed`. Only the stdio server keeps that state for the
+  connection, so the stateless HTTP bridge (a server per request) lists every tool instead.
 - **Short descriptions, loose schemas.** Descriptions say what a tool returns and when to call
   it, not how it works. Unknown arguments are reported back to the caller rather than
   rejected, so a model that guesses an argument name gets a correction instead of a dead end.

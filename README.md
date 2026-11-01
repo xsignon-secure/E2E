@@ -67,7 +67,8 @@ red at HEAD ─▶ bisect-failure (runs it across git history, names the breakin
 - **Lean.** With the `core` tool set, finding and fixing a broken locator took about **3,000 tokens**
   versus about **7,200** with Playwright MCP plus a shell, and a look at a page costs about 570 tokens
   against 2,300 for a Playwright MCP snapshot. All 19 tools add about 11.5k tokens of definitions to
-  every request, so load only the [profiles](#configuration) you use ([benchmark](#benchmark)).
+  every request, so load only the [profiles](#configuration) you use, or start with `--tools=auto`
+  (about 2.4k) and let the agent load the rest when it needs them ([benchmark](#benchmark)).
 - **Free and open source.** MIT, no account, no API key, no telemetry. Every tool and feature is free, including the shared team history server you can host yourself.
 
 ## 🚀 What only this MCP does
@@ -424,6 +425,8 @@ prompts.
 
 **Only need the fix loop?** `--tools=core` (or `PW_MCP_TOOLS=core`) exposes seven tools and cuts the
 tool-definition context by about three quarters ([one-click core install for Cursor](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==)). Other profiles: `triage`, `inspect`, `author`.
+Want the savings without losing tools? `--tools=auto` starts with the same seven plus `load-tools`,
+which the agent calls to turn on the page, audit or history tools when a task needs them.
 
 <details>
 <summary><b>Typical workflow</b></summary>
@@ -522,7 +525,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `PW_MCP_PROJECT_ROOT` | server cwd | Default project root for every tool |
-| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard). All nineteen tool definitions cost the model about 11.5k tokens per request and `core` about 2.3k (the full `tools/list`, with output schemas most clients do not show the model, is about 16k and 4.8k) |
+| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard). `auto` starts with the core loop (or the tools listed with it, e.g. `auto,inspect`) plus a `load-tools` tool the agent calls to turn on more tools for the session; the client is told the tool list changed. `auto` needs a client that refreshes its tool list (Claude Code, Cursor, VS Code); over the hosted HTTP endpoint it lists every tool. All nineteen tool definitions cost the model about 11.5k tokens per request and `core` about 2.3k (the full `tools/list`, with output schemas most clients do not show the model, is about 16k and 4.8k) |
 | `PW_MCP_OUTPUT_SCHEMAS` | on | `0` leaves the output schemas out of the tool list to save context. Results still carry `structuredContent` (see [Structured results](docs/tools.md#structured-results)) |
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
 | `PW_MCP_NO_UPDATE_CHECK` | off | `1` stops `doctor` from asking npm whether a newer version is out (same as `doctor --offline`) |
@@ -586,7 +589,8 @@ description and input schema. The full `tools/list` also carries output schemas,
 keep for themselves (about 16k for all tools). The work itself (run, diagnose, fix, verify)
 takes about 700 tokens here versus about 2,600 with Playwright MCP, but tool definitions are
 sent with every request: with all 19 tools loaded they outweigh that saving, so set
-`PW_MCP_TOOLS=core` (or another profile) when you only fix failing tests. The Playwright MCP
+`PW_MCP_TOOLS=core` (or another profile) when you only fix failing tests, or `PW_MCP_TOOLS=auto`
+to start with the core loop (2,427 tokens) and load more tools on request. The Playwright MCP
 route is a lower bound: it assumes the agent picks the right locator from the snapshot on the
 first try, which the server does for it here. Run 2026-11-01 with Playwright 1.64.1; re-run with
 `npm run build && node bench/token-benchmark.mjs`.

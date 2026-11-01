@@ -109,3 +109,102 @@ test('text and CSS alternatives are dropped, a test id alternative stays', () =>
   );
   assert.equal(line, "1. `getByRole('heading', { name: 'Hi' })` — heading \"Hi\"");
 });
+
+// ---------------------------------------------------------------------------
+// PW_MCP_TOOLS=auto: start with the core loop, load the rest on request.
+
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { resolveToolSelection, TOOL_PROFILES } from '../dist/server.js';
+
+const entry = fileURLToPath(new URL('../dist/index.js', import.meta.url));
+
+function stdioClient(args) {
+  const child = spawn(process.execPath, [entry, ...args], { stdio: ['pipe', 'pipe', 'ignore'], env: { ...process.env, LOG_LEVEL: 'silent' } });
+  const pending = new Map();
+  const notifications = [];
+  let buffer = '';
+  let id = 0;
+  child.stdout.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => {
+    buffer += chunk;
+    let i;
+    while ((i = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, i);
+      buffer = buffer.slice(i + 1);
+      try {
+        const msg = JSON.parse(line);
+        if (msg.id !== undefined) pending.get(msg.id)?.(msg);
+        else notifications.push(msg.method);
+      } catch {
+        /* not JSON */
+      }
+    }
+  });
+  const request = (method, params) =>
+    new Promise((resolve) => {
+      const n = ++id;
+      pending.set(n, resolve);
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: n, method, params })}\n`);
+    });
+  return {
+    notifications,
+    request,
+    async init() {
+      await request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+    },
+    close: () => child.kill(),
+  };
+}
+
+test('resolveToolSelection: auto starts with core, or with the listed tools', () => {
+  assert.deepEqual(new Set(resolveToolSelection('auto').tools), new Set(TOOL_PROFILES.core));
+  assert.equal(resolveToolSelection('auto').lazy, true);
+  const withInspect = resolveToolSelection('auto,inspect-page');
+  assert.deepEqual(withInspect.tools, ['inspect-page']);
+  assert.equal(resolveToolSelection('core').lazy, undefined);
+});
+
+test('--tools=auto lists core + load-tools, and load-tools turns on a profile with one list_changed', async () => {
+  const client = stdioClient(['--tools=auto']);
+  try {
+    await client.init();
+    const first = (await client.request('tools/list', {})).result.tools.map((tool) => tool.name);
+    assert.deepEqual(new Set(first), new Set([...TOOL_PROFILES.core, 'load-tools']));
+
+    const hidden = await client.request('tools/call', { name: 'inspect-page', arguments: { url: 'http://example.test' } });
+    assert.ok(hidden.error || hidden.result?.isError, 'a hidden tool cannot be called before it is loaded');
+
+    const loaded = await client.request('tools/call', { name: 'load-tools', arguments: { load: ['inspect', 'nope'] } });
+    const text = loaded.result.content[0].text;
+    assert.match(text, /Loaded: .*`inspect-page`/);
+    assert.match(text, /Unknown: `nope`/);
+    assert.ok(!loaded.result.isError, 'a partly unknown request still loads the known tools');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(client.notifications.filter((method) => method === 'notifications/tools/list_changed').length, 1);
+
+    const after = (await client.request('tools/list', {})).result.tools.map((tool) => tool.name);
+    for (const name of TOOL_PROFILES.inspect) assert.ok(after.includes(name), `${name} listed after loading`);
+
+    const again = await client.request('tools/call', { name: 'load-tools', arguments: { load: ['inspect'] } });
+    assert.match(again.result.content[0].text, /already loaded/);
+  } finally {
+    client.close();
+  }
+});
+
+test('the HTTP bridge lists every tool for PW_MCP_TOOLS=auto (it cannot keep loaded tools)', async () => {
+  const previous = process.env.PW_MCP_TOOLS;
+  process.env.PW_MCP_TOOLS = 'auto';
+  const handler = createMcpHttpHandler({ token: TOKEN, allowedHosts: [] });
+  try {
+    const names = (await rpc(handler, 1, 'tools/list', {})).result.tools.map((tool) => tool.name);
+    assert.ok(names.includes('inspect-page'));
+    assert.ok(!names.includes('load-tools'));
+  } finally {
+    if (previous === undefined) delete process.env.PW_MCP_TOOLS;
+    else process.env.PW_MCP_TOOLS = previous;
+    await handler.close().catch(() => undefined);
+  }
+});
