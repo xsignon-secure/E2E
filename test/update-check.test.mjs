@@ -47,7 +47,7 @@ test('checkForUpdate never throws and can be switched off', async () => {
 test('doctor warns with the upgrade commands when a newer version is out', async () => {
   const check = await versionCheck({ fetchImpl: reply({ version: '99.0.0' }), env: {} });
   assert.equal(check.status, 'warn');
-  assert.match(check.detail, new RegExp(`^${SERVER_VERSION.replace(/\./g, '\\.')} is running; 99\\.0\\.0 is out`));
+  assert.ok(check.detail.startsWith(`${SERVER_VERSION} is running; 99.0.0 is out`), check.detail);
   assert.match(check.fix, /npm install -D playwright-e2e-mcp@latest/);
   assert.match(check.fix, /restart your MCP client/);
   const offline = await versionCheck({ offline: true });
