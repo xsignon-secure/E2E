@@ -156,7 +156,7 @@ numbered next steps (re-run this single test by `file:line`, headed/debug mode,
 | Argument | Type | Description |
 | --- | --- | --- |
 | `url` | string | Full http(s) URL to open (required) |
-| `view` | `elements` \| `locators` \| `aria` | `locators` returns a compact map of interactive elements with verified locators (cheapest); `aria` the accessibility snapshot of the page (or of `selector`) with a ready `toMatchAriaSnapshot` assertion; `elements` (default) the DOM inventory |
+| `view` | `elements` \| `locators` \| `aria` | `locators` (default) returns a compact map of interactive elements with verified locators, repeated blocks such as product cards shown once; `aria` the accessibility snapshot of the page (or of `selector`) with a ready `toMatchAriaSnapshot` assertion; `elements` the full DOM inventory with boxes and attributes (the default when `selector` is set) |
 | `projectRoot` | string | Project whose Playwright launches the browser |
 | `selector` | string | Inspect matches of this selector instead of the whole DOM |
 | `waitFor` | string | Wait for a selector (CSS or `text=…`) before inspecting |

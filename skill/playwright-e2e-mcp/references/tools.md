@@ -65,7 +65,7 @@ becomes the last run for `get-failure`, `suggest-fix` and `diagnose-flaky`.
 | `waitUntil` | `load` \| `domcontentloaded` \| `networkidle` | Navigation wait |
 | `includeHtml` | boolean | Include rendered HTML (capped by `maxHtmlChars`, default 20000) |
 | `timeoutMs` | number | Default 45000 |
-| `view` | `elements` \| `locators` \| `aria` | `locators`: compact map of interactive elements with verified locators; `aria` (0.5.0+): accessibility snapshot of the page or of `selector`, with a `toMatchAriaSnapshot` assertion |
+| `view` | `elements` \| `locators` \| `aria` | `locators` (default): compact map of interactive elements with verified locators, repeated blocks shown once; `elements`: full DOM inventory; `aria` (0.5.0+): accessibility snapshot of the page or of `selector`, with a `toMatchAriaSnapshot` assertion |
 | `storageState` | string | Playwright storageState JSON inside the project (signed-in session); defaults to `PW_MCP_STORAGE_STATE` |
 | `headers` | object | Extra HTTP headers |
 | `actions` | array | Up to 20 steps after load: `{ type: click\|dblclick\|fill\|press\|check\|uncheck\|select\|hover\|wait\|goto, locator?, value?, url?, ms? }`. Locators may start with `frameLocator('#frame')` or use `.contentFrame()` for iframes (0.6.1+). `{ type: 'switchTab', value?: 'last'\|'first'\|'2'\|text in URL or title }` moves to a popup or new tab (0.8.0+) |

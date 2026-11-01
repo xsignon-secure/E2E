@@ -1,6 +1,6 @@
 # Token benchmark: diagnosing one drifted locator
 
-Run 2026-10-28 with playwright-e2e-mcp 0.7.0 and Playwright 1.64.1 (`playwright mcp`). Reproduce with `npm run build && node bench/token-benchmark.mjs`.
+Run 2026-11-01 with playwright-e2e-mcp 0.9.0 and Playwright 1.64.1 (`playwright mcp`). Reproduce with `npm run build && node bench/token-benchmark.mjs`.
 
 Scenario: a storefront page (navigation, search, 24 product cards, cart, footer) renamed its checkout button test id from `checkout-button` to `checkout-btn`; the spec still uses the old one. Tokens are estimated as characters ÷ 4 for both routes.
 
@@ -8,15 +8,68 @@ The `core` column loads only the 7 tools in `PW_MCP_TOOLS=core` (or `--tools=cor
 
 | Step | playwright-e2e-mcp (`core` tools) | playwright-e2e-mcp (all tools) | Playwright MCP + shell |
 | --- | ---: | ---: | ---: |
-| Tool definitions (sent with every request) | 4,826 | 16,121 | 5,225 |
-| Run the failing test | 244 | 244 | 323 |
+| Tool definitions the model reads (every request) | 2,266 | 11,480 | 4,558 |
+| Run the failing test | 257 | 257 | 323 |
 | Find the element / propose the fix | 232 | 232 | 2,286 |
 | Apply + verify (re-run) | 230 | 230 | 34 |
-| **Total for one fix** | 5,532 | 16,827 | 7,868 |
+| **Total for one fix** | 2,985 | 12,199 | 7,201 |
+
+Full `tools/list` on the wire, output schemas and annotations included: 4,788 (`core`), 15,898 (all tools), 5,225 (Playwright MCP).
 
 Fixed and verified by playwright-e2e-mcp without an edit by the agent: **yes**.
 
 Route B is a lower bound: it assumes the agent reads one snapshot, writes the right locator first time and re-runs once. It also leaves the reasoning (matching `checkout-button` to "Proceed to checkout" among ~150 elements) to the model, which route A does in the server.
+
+## Looking at a page
+
+Writing a new test starts with reading the page. The locator map lists verified locators and shows repeated blocks (here, 24 product cards) once.
+
+| Looking at the storefront page | Tokens |
+| --- | ---: |
+| playwright-e2e-mcp `inspect-page` (default: locator map) | 571 |
+| playwright-e2e-mcp `inspect-page` `view: 'aria'` | 2,797 |
+| Playwright MCP `browser_navigate` + `browser_snapshot` | 2,286 |
+
+<details><summary>playwright-e2e-mcp: inspect-page (default view)</summary>
+
+```markdown
+## 🔎 "Northwind Outfitters"
+
+**URL:** http://127.0.0.1:32795/  
+**Elements:** 140  |  **Viewport:** 1280×720  |  **Took:** 2411ms
+
+### Locator map (80 of 140 visible interactive elements, locators verified unique)
+
+1. `getByRole('link', { name: 'Northwind Outfitters' })` — link "Northwind Outfitters"
+2. `getByRole('navigation')` — navigation
+3. `getByRole('link', { name: 'New' })` — link "New"
+4. `getByRole('link', { name: 'Men', exact: true })` — link "Men"
+5. `getByRole('link', { name: 'Women' })` — link "Women"
+6. `getByRole('link', { name: 'Sale' })` — link "Sale"
+7. `getByRole('link', { name: 'Help' })` — link "Help"
+8. `getByRole('searchbox', { name: 'Search' })` — searchbox "Search" · also `getByLabel('Search')`
+9. `getByRole('button', { name: 'Search' })` — button "Search"
+10. `getByRole('link', { name: 'Account' })` — link "Account"
+11. `getByRole('main')` — main
+12. `getByRole('heading', { name: 'All products' })` — heading "All products"
+13. `getByRole('checkbox', { name: 'In stock' })` — checkbox "In stock" · also `getByLabel('In stock')`
+14. `getByRole('checkbox', { name: 'On sale' })` — checkbox "On sale" · also `getByLabel('On sale')`
+15. `getByRole('combobox', { name: 'Sort' })` — combobox "Sort"
+16. `getByTestId('product-1')` — article
+17. `getByRole('img', { name: 'Trail Runner 1' })` — img "Trail Runner 1"
+18. `getByRole('heading', { name: 'Trail Runner 1' })` — heading "Trail Runner 1"
+19. `locator('article:nth-of-type(1) > label > input')` — spinbutton "Qty"
+20. `getByTestId('add-to-cart-1')` — button "Add to cart"
+21–60. ↳ 8 more blocks like 16–20: same locators with the item's own name or number: "City Sneaker 1", "Rain Shell 1", "Wool Beanie 1", "Canvas Tote 1", "Steel Bottle 1", "Trail Runner 2", "City Sneaker 2", "Rain Shell 2". Pass `selector` to list one in full.
+61. `article:nth-of-type(10)` — article
+62. `article:nth-of-type(10) > img` — img "Wool Beanie 2"
+63. `article:nth-of-type(10) > h3` — heading "Wool Beanie 2"
+64. `article:nth-of-type(10) > label > input` — spinbutton "Qty"
+65. `article:nth-of-type(10) > button` — button "Add to cart"
+66–80. ↳ 3 more blocks like 61–65: same locators with the item's own name or number: "Canvas Tote 2", "Steel Bottle 2", "Trail Runner 3". Pass `selector` to list one in full.
+```
+
+</details>
 
 ## What each route returned for the diagnosis step
 
@@ -51,7 +104,7 @@ Route B is a lower bound: it assumes the agent reads one snapshot, writes the ri
 
 ```markdown
 ### Page
-- Page URL: http://127.0.0.1:38795/
+- Page URL: http://127.0.0.1:32795/
 - Page Title: Northwind Outfitters
 ### Snapshot
 ```yaml

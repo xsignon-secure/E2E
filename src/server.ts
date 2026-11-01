@@ -12,6 +12,7 @@ import { statSync } from 'node:fs';
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { McpServer, SUPPORTED_PROTOCOL_VERSIONS, TRACEPARENT_META_KEY } from '@modelcontextprotocol/server';
 import type { ServerContext, StandardSchemaWithJSON, ToolAnnotations } from '@modelcontextprotocol/server';
+import { withCompactJsonSchema } from './utils/compact-schema.js';
 import type { ToolContext, ToolResponse, ToolStore } from './types/index.js';
 import { toPlaywrightMcpError } from './types/index.js';
 import { logger } from './utils/logger.js';
@@ -346,7 +347,7 @@ export const READ_ONLY_TOOLS: readonly string[] = ['list-tests', 'get-failure', 
 
 /**
  * Named tool sets for PW_MCP_TOOLS / --tools. Every tool definition costs
- * context on each request (all nineteen are ~16k tokens), so a client that
+ * context on each request (all nineteen are ~11.5k tokens), so a client that
  * only fixes failing suites can load the core loop alone.
  */
 export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {
@@ -466,7 +467,8 @@ export function createServer(options: CreateServerOptions = {}): McpServer {
       {
         title: tool.title,
         description: tool.description,
-        inputSchema: input.schema,
+        // Listed without length/item limits (the full schema still validates).
+        inputSchema: withCompactJsonSchema(input.schema),
         // Results always carry structuredContent; the schema that describes
         // it costs context on every request, so PW_MCP_OUTPUT_SCHEMAS=0 drops it.
         ...(process.env.PW_MCP_OUTPUT_SCHEMAS !== '0' && outputSchemaFor(tool.name) ? { outputSchema: outputSchemaFor(tool.name) } : {}),

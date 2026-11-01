@@ -21,6 +21,10 @@
  * lower bound for route B: it assumes the agent finds the element and writes
  * the fix without any further calls.
  *
+ * Tool definitions count what the model reads (name, description, input
+ * schema); the full tools/list size is reported next to the table. It also
+ * measures inspect-page on the same page against browser_snapshot.
+ *
  * Tokens are estimated as characters ÷ 4 for both routes, the same
  * rule, so the ratio is what matters. Results go to bench/RESULTS.md.
  *
@@ -43,6 +47,14 @@ const spec = path.join(project, 'tests', 'checkout.spec.ts');
 const pwCli = path.join(repoRoot, 'node_modules', 'playwright', 'cli.js');
 
 const tokens = (text) => Math.ceil(text.length / 4);
+
+/**
+ * What the model reads of a tools/list: name, description and input schema.
+ * Clients turn MCP tools into the model's own tool format, which has no
+ * place for outputSchema, annotations or _meta, so those stay on the wire.
+ */
+const modelTokens = (toolsJson) =>
+  tokens(JSON.stringify(JSON.parse(toolsJson).map(({ name, description, inputSchema }) => ({ name, description, input_schema: inputSchema }))));
 
 class Client {
   constructor(command, args, env, cwd) {
@@ -134,6 +146,9 @@ async function main() {
     const run = await ours.call('run-test', { testFiles: ['tests/checkout.spec.ts'], retryOnFailure: false });
     const fix = await ours.call('suggest-fix', {});
     const applied = await ours.call('suggest-fix', { apply: true });
+    // Looking at a page to write a test: the default view, and the aria snapshot.
+    const inspect = await ours.call('inspect-page', { url: app.origin });
+    const inspectAria = await ours.call('inspect-page', { url: app.origin, view: 'aria' });
     ours.close();
     const fixedByUs = readFileSync(spec, 'utf8').includes("getByRole('button', { name: 'Proceed to checkout' })") && applied.includes('✅ Verified');
     samples.ours = { run, fix, applied };
@@ -158,9 +173,9 @@ async function main() {
     const passing = await rawTestRun(env);
     samples.pw = { failing, navigate, snapshot, passing };
 
-    const a = { defs: tokens(oursDefs), coreDefs: tokens(coreDefs), steps: tokens(run) + tokens(fix) + tokens(applied) };
-    const b = { defs: tokens(pwDefs), steps: tokens(failing) + tokens(navigate) + tokens(snapshot) + tokens(passing) };
-    rows.push(['Tool definitions (sent with every request)', a.coreDefs, a.defs, b.defs]);
+    const a = { defs: modelTokens(oursDefs), coreDefs: modelTokens(coreDefs), steps: tokens(run) + tokens(fix) + tokens(applied) };
+    const b = { defs: modelTokens(pwDefs), steps: tokens(failing) + tokens(navigate) + tokens(snapshot) + tokens(passing) };
+    rows.push(['Tool definitions the model reads (every request)', a.coreDefs, a.defs, b.defs]);
     rows.push(['Run the failing test', tokens(run), tokens(run), tokens(failing)]);
     rows.push(['Find the element / propose the fix', tokens(fix), tokens(fix), tokens(navigate) + tokens(snapshot)]);
     rows.push(['Apply + verify (re-run)', tokens(applied), tokens(applied), tokens(passing)]);
@@ -174,6 +189,14 @@ async function main() {
       '| --- | ---: | ---: | ---: |',
       ...rows.map(([label, ...counts]) => `| ${label} | ${counts.map((n) => n.toLocaleString('en-US')).join(' | ')} |`),
     ].join('\n');
+    const wire = `Full \`tools/list\` on the wire, output schemas and annotations included: ${tokens(coreDefs).toLocaleString('en-US')} (\`core\`), ${tokens(oursDefs).toLocaleString('en-US')} (all tools), ${tokens(pwDefs).toLocaleString('en-US')} (Playwright MCP).`;
+    const pageTable = [
+      '| Looking at the storefront page | Tokens |',
+      '| --- | ---: |',
+      `| playwright-e2e-mcp \`inspect-page\` (default: locator map) | ${tokens(inspect).toLocaleString('en-US')} |`,
+      `| playwright-e2e-mcp \`inspect-page\` \`view: 'aria'\` | ${tokens(inspectAria).toLocaleString('en-US')} |`,
+      `| Playwright MCP \`browser_navigate\` + \`browser_snapshot\` | ${(tokens(navigate) + tokens(snapshot)).toLocaleString('en-US')} |`,
+    ].join('\n');
     const md = [
       '# Token benchmark: diagnosing one drifted locator',
       '',
@@ -185,9 +208,25 @@ async function main() {
       '',
       table,
       '',
+      wire,
+      '',
       `Fixed and verified by playwright-e2e-mcp without an edit by the agent: **${fixedByUs ? 'yes' : 'no'}**.`,
       '',
       'Route B is a lower bound: it assumes the agent reads one snapshot, writes the right locator first time and re-runs once. It also leaves the reasoning (matching `checkout-button` to "Proceed to checkout" among ~150 elements) to the model, which route A does in the server.',
+      '',
+      '## Looking at a page',
+      '',
+      'Writing a new test starts with reading the page. The locator map lists verified locators and shows repeated blocks (here, 24 product cards) once.',
+      '',
+      pageTable,
+      '',
+      '<details><summary>playwright-e2e-mcp: inspect-page (default view)</summary>',
+      '',
+      '```markdown',
+      inspect.trim(),
+      '```',
+      '',
+      '</details>',
       '',
       '## What each route returned for the diagnosis step',
       '',
@@ -209,7 +248,7 @@ async function main() {
       '',
     ].join('\n');
     writeFileSync(path.join(here, 'RESULTS.md'), md);
-    process.stdout.write(`${table}\n\nFixed and verified: ${fixedByUs ? 'yes' : 'no'}\nWrote bench/RESULTS.md\n`);
+    process.stdout.write(`${table}\n\n${wire}\n\n${pageTable}\n\nFixed and verified: ${fixedByUs ? 'yes' : 'no'}\nWrote bench/RESULTS.md\n`);
   } finally {
     rmSync(spec, { force: true });
     rmSync(path.join(project, 'test-results'), { recursive: true, force: true });
