@@ -539,6 +539,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_ALLOWED_HOSTS` | localhost + Vercel hostnames when there is no token | HTTP bridge only: comma-separated `Host` allowlist; `*` accepts any |
 | `PW_MCP_MAX_FAILED_AUTH` | `20` | HTTP bridge only: wrong tokens or access keys one client address may send in 15 minutes before it gets `429` |
 | `PW_MCP_OAUTH_REDIRECT_HOSTS` | any https host | HTTP bridge only: comma-separated hosts OAuth apps may return to, e.g. `claude.ai,chatgpt.com`; `.example.com` covers subdomains; localhost always works |
+| `PW_MCP_OAUTH_CIMD` | `1` | HTTP bridge only: accept OAuth clients that identify with a Client ID Metadata Document (an https `client_id`, the MCP default since 2025-11-25); `0` accepts only dynamically registered clients |
 | `PW_MCP_TRUST_PROXY` | off (on for Vercel) | HTTP bridge only: `1` trusts `X-Real-IP` / `X-Forwarded-For` from a reverse proxy in front, so the sign-in limit counts per client, not per proxy |
 | `PW_MCP_PASSTHROUGH_ENV` | — | HTTP bridge only: comma-separated extra variables passed to test runs (e.g. `BASE_URL`) |
 | `PW_MCP_MAX_CHILDREN` | `4` | HTTP bridge only: how many test runs and browser probes may run at once |

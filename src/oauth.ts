@@ -3,8 +3,10 @@
  *
  * Clients such as claude.ai custom connectors cannot send a fixed bearer
  * token; they discover an authorization server (RFC 9728 / RFC 8414),
- * register themselves (RFC 7591) and run the authorization-code flow with
- * PKCE. This module is that authorization server, kept stateless so it fits a
+ * identify themselves and run the authorization-code flow with PKCE. A
+ * client identifies itself with a Client ID Metadata Document (an https
+ * `client_id` this server fetches; the MCP default since 2025-11-25), or,
+ * for older clients, by dynamic registration (RFC 7591). This module is that authorization server, kept stateless so it fits a
  * serverless function: client ids, codes and tokens are HMAC-signed payloads
  * keyed from PW_MCP_HTTP_TOKEN, so nothing is stored and rotating the token
  * signs every client out.
@@ -17,6 +19,8 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { clientAddress } from './utils/attempt-limiter.js';
 import type { AttemptLimiter } from './utils/attempt-limiter.js';
+import { ClientMetadataError, createClientMetadataFetcher, isClientMetadataUrl } from './utils/client-metadata.js';
+import type { ClientMetadataFetcher } from './utils/client-metadata.js';
 
 /** Lifetimes, in seconds. */
 const CODE_TTL = 5 * 60;
@@ -48,6 +52,13 @@ export interface OAuthOptions {
    * `.example.com` for its subdomains). Empty allows any https host.
    */
   redirectHosts?: string[];
+  /**
+   * Accept Client ID Metadata Documents (https client ids). Default true;
+   * PW_MCP_OAUTH_CIMD=0 turns it off.
+   */
+  clientMetadataDocuments?: boolean;
+  /** Fetches and checks a metadata document; tests pass a fake. */
+  fetchClientMetadata?: ClientMetadataFetcher;
 }
 
 export interface OAuthServer {
@@ -158,6 +169,8 @@ export function createOAuthServer(options: OAuthOptions): OAuthServer {
   const key = createHmac('sha256', options.token).update('playwright-e2e-mcp oauth v1').digest();
   const redirectHosts = options.redirectHosts ?? [];
   const redirectAllowed = (uri: unknown): uri is string => isAllowedRedirectUri(uri) && isAllowedRedirectHost(uri, redirectHosts);
+  const cimd = options.clientMetadataDocuments ?? process.env.PW_MCP_OAUTH_CIMD !== '0';
+  const fetchClientMetadata = options.fetchClientMetadata ?? createClientMetadataFetcher({ redirectAllowed, now });
 
   function sign(payload: Payload): string {
     const body = base64url(JSON.stringify(payload));
@@ -187,10 +200,32 @@ export function createOAuthServer(options: OAuthOptions): OAuthServer {
     return base64url(sha256(clientId)).slice(0, 22);
   }
 
-  function client(clientId: string | null): { redirectUris: string[]; name: string } | undefined {
+  /** A client registered with /oauth/register (its id is a signed payload). */
+  function registeredClient(clientId: string | null): { redirectUris: string[]; name: string } | undefined {
     const payload = verify(clientId, 'client');
     if (!payload || !Array.isArray(payload.r)) return undefined;
     return { redirectUris: payload.r.filter(redirectAllowed), name: typeof payload.n === 'string' ? payload.n : '' };
+  }
+
+  /** True for a client id this server accepts without fetching anything. */
+  function knownClientId(clientId: string): boolean {
+    return Boolean(registeredClient(clientId)) || (cimd && isClientMetadataUrl(clientId));
+  }
+
+  type ClientLookup = { redirectUris: string[]; name: string; documentHost?: string } | { error: string } | undefined;
+
+  /** Resolve a client id: a signed registration, or a metadata document URL. */
+  async function resolveClient(clientId: string | null): Promise<ClientLookup> {
+    if (!clientId) return undefined;
+    const registered = registeredClient(clientId);
+    if (registered) return registered;
+    if (!cimd || !isClientMetadataUrl(clientId)) return undefined;
+    try {
+      const metadata = await fetchClientMetadata(clientId);
+      return { redirectUris: metadata.redirectUris.filter(redirectAllowed), name: metadata.name, documentHost: new URL(clientId).host };
+    } catch (err) {
+      return { error: err instanceof ClientMetadataError ? err.message : 'the client metadata document could not be read' };
+    }
   }
 
   function issueTokens(tag: string): Response {
@@ -227,6 +262,8 @@ export function createOAuthServer(options: OAuthOptions): OAuthServer {
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: ['mcp'],
+      // Clients may use an https URL as client_id (draft-ietf-oauth-client-id-metadata-document).
+      client_id_metadata_document_supported: cimd,
     });
   }
 
@@ -296,7 +333,14 @@ export function createOAuthServer(options: OAuthOptions): OAuthServer {
     const isPost = request.method === 'POST';
     const params = isPost ? await readParams(request) : new URL(request.url).searchParams;
     const clientId = params.get('client_id');
-    const registered = client(clientId);
+    const registered = await resolveClient(clientId);
+    if (registered && 'error' in registered) {
+      return page(
+        400,
+        'Sign-in failed',
+        `<h1>Unknown client</h1><p>This app's description could not be used: ${escapeHtml(registered.error)}.</p>`,
+      );
+    }
     if (!clientId || !registered) {
       return page(400, 'Sign-in failed', '<h1>Unknown client</h1><p>This app is not registered with the server. Try connecting again.</p>');
     }
@@ -340,12 +384,17 @@ export function createOAuthServer(options: OAuthOptions): OAuthServer {
       .join('');
     const appName = registered.name ? `<strong>${escapeHtml(registered.name)}</strong>` : 'An app';
     const host = new URL(redirectUri).host;
+    // For a metadata document, the domain that published it is who the app is.
+    const verifiedBy =
+      registered.documentHost && registered.documentHost !== host
+        ? ` (described by <code>${escapeHtml(registered.documentHost)}</code>)`
+        : '';
     const error = isPost ? '<p class="error">That access key is not right. Try again.</p>' : '';
     return page(
       isPost ? 401 : 200,
       'Sign in to playwright-e2e-mcp',
       `<h1>Sign in to playwright-e2e-mcp</h1>
-<p>${appName} at <code>${escapeHtml(host)}</code> wants to use this server's Playwright tools. Enter the server's access key to allow it.</p>
+<p>${appName} at <code>${escapeHtml(host)}</code>${verifiedBy} wants to use this server's Playwright tools. Enter the server's access key to allow it.</p>
 ${error}<form method="post" action="/oauth/authorize">${hidden}
 <label for="access_key">Access key</label>
 <input id="access_key" name="access_key" type="password" autocomplete="current-password" required autofocus>
@@ -357,7 +406,9 @@ ${error}<form method="post" action="/oauth/authorize">${hidden}
   async function tokenEndpoint(request: Request): Promise<Response> {
     const params = await readParams(request);
     const clientId = params.get('client_id');
-    if (clientId && !client(clientId)) return oauthError(401, 'invalid_client', 'Unknown client.');
+    // Codes and refresh tokens are bound to the client id, so a metadata
+    // document URL needs no second fetch here.
+    if (clientId && !knownClientId(clientId)) return oauthError(401, 'invalid_client', 'Unknown client.');
     switch (params.get('grant_type')) {
       case 'authorization_code': {
         const code = verify(params.get('code'), 'code');

@@ -45,7 +45,9 @@ issues in Playwright or the MCP SDK themselves (report those upstream).
   (a disconnected client frees its slot immediately), and internal error messages
   are not returned to clients. Wrong tokens and access keys are limited per client
   address (`PW_MCP_MAX_FAILED_AUTH`, 20 per 15 minutes), and
-  `PW_MCP_OAUTH_REDIRECT_HOSTS` can restrict which apps may register. The allowlist only covers the child's own
+  `PW_MCP_OAUTH_REDIRECT_HOSTS` can restrict which apps may sign in. Client ID
+  Metadata Documents are fetched over https only, without redirects, never from a
+  private or reserved address, with a 5 second timeout and a 16 KB cap. The allowlist only covers the child's own
   environment: test code runs as the same OS user, so on Linux it could still read
   the server's startup environment from `/proc`. That is why only token holders
   can run project code; keep other secrets out of the bridge's environment, or run
