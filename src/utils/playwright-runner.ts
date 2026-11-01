@@ -11,7 +11,7 @@
 
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { PlaywrightMcpError } from '../types/index.js';
 import type {
@@ -32,6 +32,7 @@ import {
   extractJsonFromText,
   extractTestTitles,
   diagnoseOutput,
+  parseReport,
   parseReportJson,
   parseProjectNames,
 } from './report-parser.js';
@@ -47,6 +48,7 @@ import {
 } from './path-utils.js';
 import { logger } from './logger.js';
 import { ATTEMPTS_FILE_ENV, attemptsReporterPath, parseAttempts } from './attempts-reporter.js';
+import { LIVE_RESULTS_FILE_ENV, liveReporterPath, liveResultsToReport } from './live-reporter.js';
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
 const DEFAULT_LIST_TIMEOUT_MS = 60_000;
@@ -619,6 +621,10 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
   if (options.onProgress) reporters.push('list');
   const attemptsPath = options.collectAttempts ? tempFilePath('pw-attempts', '.jsonl') : undefined;
   if (attemptsPath) reporters.push(toNativePath(await attemptsReporterPath()));
+  // Writes each result as its test ends, so a run killed before the JSON
+  // report is written still reports the failures that already happened.
+  const livePath = tempFilePath('pw-live', '.jsonl');
+  reporters.push(toNativePath(await liveReporterPath()));
   args.push(`--reporter=${reporters.join(',')}`);
 
   const env = childEnv({
@@ -626,6 +632,7 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
     FORCE_COLOR: '0',
     PW_TEST_HTML_REPORT_OPEN: 'never',
     ...(attemptsPath ? { [ATTEMPTS_FILE_ENV]: toNativePath(attemptsPath) } : {}),
+    [LIVE_RESULTS_FILE_ENV]: toNativePath(livePath),
   });
 
   const timeoutMs = clampInt(options.timeoutMs, 1_000, 3_600_000) ?? DEFAULT_RUN_TIMEOUT_MS;
@@ -645,9 +652,14 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
 
   const rawReport = (await readFileText(reportPath)) ?? extractJsonFromText(outcome.stdout);
   const rawAttempts = attemptsPath ? await readFileText(attemptsPath) : null;
+  const rawLive = await readFileText(livePath);
+  await rm(livePath, { force: true }).catch(() => undefined);
+  const liveReport = rawReport ? undefined : liveResultsToReport(rawLive ?? '');
   const parsed = rawReport
     ? parseReportJson(rawReport, root)
-    : {
+    : liveReport
+      ? parseReport(liveReport, root)
+      : {
         stats: null,
         failures: [],
         failuresTruncated: false,
@@ -697,8 +709,16 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
     hint = 'Playwright exited with an error before writing a report. See stderr below.';
   }
 
+  if (liveReport) {
+    const note = parsed.failures.length > 0
+      ? `Playwright never wrote its JSON report, so the ${parsed.failures.length} failure${parsed.failures.length === 1 ? '' : 's'} below come from the tests that finished before the run stopped; tests still running were lost.`
+      : 'Playwright never wrote its JSON report; the counts below cover only the tests that finished before the run stopped.';
+    hint = [hint, note].filter(Boolean).join('\n');
+  }
+
   const ok = outcome.code === 0 && !outcome.timedOut && !outcome.aborted && !outcome.spawnError;
   const partial =
+    liveReport !== undefined ||
     outcome.timedOut ||
     outcome.aborted ||
     (outcome.code !== 0 && parsed.failures.length === 0 && rawReport === null);

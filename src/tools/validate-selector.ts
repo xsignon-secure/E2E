@@ -18,6 +18,8 @@ import {
   clipLines,
   describePageState,
   describeRouteHits,
+  describeTabs,
+  describeBlockedWrites,
   guard,
   loginHint,
   pageStateShape,
@@ -145,10 +147,14 @@ export const validateSelectorTool = {
         if (stateLine) lines.push(`**Page state:** ${stateLine}`, '');
         const mocks = describeRouteHits(state, data.routeHits);
         if (mocks.length > 0) lines.push('**Network mocks:**', ...mocks, '');
+        const blocked = describeBlockedWrites(data.blockedWrites);
+        if (blocked.length > 0) lines.push(...blocked, '');
+        const tabs = describeTabs(data.tabs);
+        if (tabs.length > 0) lines.push(...tabs, '');
         const login = loginHint(data.finalUrl, state);
         if (login) lines.push(`> 🔒 ${login}`, '');
         lines.push(
-          "**How to fix:** confirm the element exists in this state. It may render late (pass `waitFor`), appear only after an interaction (pass `actions`), or sit inside an iframe (start the locator with `frameLocator('#frame')`). Run **inspect-page** with `view: 'locators'` on the same URL to list real, verified locators.",
+          "**How to fix:** confirm the element exists in this state. It may render late (pass `waitFor`), appear only after an interaction (pass `actions`), sit inside an iframe (start the locator with `frameLocator('#frame')`), or live in a popup or new tab (add a `switchTab` step after the click that opens it). Run **inspect-page** with `view: 'locators'` on the same URL to list real, verified locators.",
         );
         return toolText(lines.join('\n'), { url, valid: true, matches: 0, ...httpStatus });
       }
@@ -158,6 +164,8 @@ export const validateSelectorTool = {
       if (stateLine) lines.push(`**Page state:** ${stateLine}`);
       const mocks = describeRouteHits(state, data.routeHits);
       if (mocks.length > 0) lines.push('**Network mocks:**', ...mocks);
+      lines.push(...describeTabs(data.tabs));
+      lines.push(...describeBlockedWrites(data.blockedWrites));
       lines.push('');
       if (status) lines.push(status, '');
       const matches = data.elements;

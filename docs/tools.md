@@ -53,10 +53,11 @@ out; results still carry the same fields.
 | --- | --- | --- |
 | `storageState` | string | Path inside the project to a Playwright storageState JSON (cookies + localStorage), e.g. `playwright/.auth/user.json` from your setup project. Defaults to `PW_MCP_STORAGE_STATE` |
 | `headers` | object | Extra HTTP headers for every request, e.g. `{ "Authorization": "Bearer …" }` |
-| `actions` | array | Up to 20 steps run in order after load: `{ "type": "click" \| "dblclick" \| "hover" \| "fill" \| "press" \| "check" \| "uncheck" \| "select" \| "wait" \| "goto", "locator"?, "value"?, "url"?, "ms"? }`. Locators use Playwright syntax, e.g. `getByRole('button', { name: 'Open settings' })`; reach into an iframe with `frameLocator('#checkout').getByLabel('Card number')` or `locator('#checkout').contentFrame()…`. Each call opens a fresh browser, so a login belongs in the same `actions` list (or use `storageState`); end with a `wait` on something the target state shows |
+| `actions` | array | Up to 20 steps run in order after load: `{ "type": "click" \| "dblclick" \| "hover" \| "fill" \| "press" \| "check" \| "uncheck" \| "select" \| "wait" \| "goto", "locator"?, "value"?, "url"?, "ms"? }`. Locators use Playwright syntax, e.g. `getByRole('button', { name: 'Open settings' })`; reach into an iframe with `frameLocator('#checkout').getByLabel('Card number')` or `locator('#checkout').contentFrame()…`. Each call opens a fresh browser, so a login belongs in the same `actions` list (or use `storageState`); end with a `wait` on something the target state shows. A popup or new tab (an OAuth or payment window) is reached with `{ "type": "switchTab", "value"?: "last" \| "first" \| "2" \| "accounts.google" }`: the newest tab by default, a 1-based number, or text in the tab's URL or title; later steps and the inspection run there, and the result lists every open tab |
 | `actionTimeoutMs` | number | How long each action waits for its element to be visible, enabled and uncovered (default `10000`, max `120000`). Keep `timeoutMs` above the total |
 | `routes` | array | Up to 20 network mocks applied before the page loads, first match wins: `{ "url": "**/api/cart", "method"?, "status"?, "json"? \| "body"?, "contentType"?, "headers"?, "abort"?, "delayMs"? }`. `json`, `body` or `status` fulfils the request, `abort: true` fails it, and `delayMs` alone slows the real request |
 | `viewport` | object | `{ "width": 390, "height": 844 }` (default 1280×720) |
+| `blockWrites` | boolean | Abort every POST, PUT, PATCH and DELETE that no `routes` mock or HAR answers, so steps against a real environment cannot place an order or delete data. The result lists the blocked requests. `PW_MCP_BLOCK_WRITES=1` turns it on by default |
 | `har` | object | `{ "path": "tests/fixtures/cart.har", "mode"?: "replay" \| "record", "url"?: "**/api/**", "notFound"?: "abort" \| "fallback" }`. `replay` (default) answers matching requests from the file, `record` saves the page's traffic to it. The file and its folder must be inside the project. `routes` mocks still win over the HAR |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Browser engine (default `chromium`; the engine must be installed with `npx playwright install`). `audit-performance` is Chromium-only, and WebKit is refused while private addresses are blocked |
 | `device` | string | A Playwright device preset such as `iPhone 15`, `Pixel 7` or `iPad Pro 11`: its viewport, user agent, pixel ratio and touch. The engine stays `browser`'s (Firefox has no mobile emulation); `viewport` still overrides the size. An unknown name lists close matches |
@@ -161,7 +162,7 @@ numbered next steps (re-run this single test by `file:line`, headed/debug mode,
 | `includeHtml` | boolean | Include the rendered HTML (capped) |
 | `maxHtmlChars` | number | HTML cap, default `20000` |
 | `timeoutMs` | number | Overall limit, default `45000` |
-| `storageState` / `headers` / `actions` / `routes` / `har` / `browser` / `device` / `channel` / `viewport` | — | [Page state](#page-state-signed-in-pages-headers-and-steps) |
+| `storageState` / `headers` / `actions` / `routes` / `blockWrites` / `har` / `browser` / `device` / `channel` / `viewport` | — | [Page state](#page-state-signed-in-pages-headers-and-steps) |
 
 Each element comes with Playwright locators that were **checked on the page** to resolve to
 exactly that element, best first (role + accessible name, test id, label, placeholder, text,
@@ -598,8 +599,8 @@ describe path and title, so a renamed test is compared, not reported as removed)
 
 | Verdict | Rules |
 | --- | --- |
-| **BLOCK** | `assertions-removed` (a test has fewer `expect`s), `test-removed`, `skip-added` (`test.skip`, `fixme`, `fail`, a conditional skip, `describe.skip`), `only-added`, `file-deleted` |
-| **WARN** | `assertion-softened` (`expect.soft`), `weaker-matcher` (e.g. `toHaveText` → `toBeVisible`, `toEqual` → `toBeTruthy`), `hard-wait-added`, `force-added`, `error-swallowed` (`.catch(() => {})`, empty `catch`), `timeout-raised` (above 2× and 30 s), `retries-raised`, `screenshot-tolerance-raised` |
+| **BLOCK** | `assertions-removed` (a test has fewer `expect`s), `test-removed`, `skip-added` (`test.skip`, `fixme`, `fail`, a conditional skip, `describe.skip`), `only-added`, `file-deleted`, `assertion-swallowed` (an `expect` wrapped in `try` whose `catch` neither rethrows nor asserts) |
+| **WARN** | `assertion-softened` (`expect.soft`), `weaker-matcher` (e.g. `toHaveText` → `toBeVisible`, `toEqual` → `toBeTruthy`), `hard-wait-added`, `force-added`, `error-swallowed` (`.catch(() => {})`, a `catch` without a rethrow), `assertion-not-awaited` (a web-first assertion such as `toBeVisible` without `await`), `timeout-raised` (above 2× and 30 s), `retries-raised`, `screenshot-tolerance-raised` |
 
 Strings and comments are masked before the scan, so `"expect("` in a string does not
 count. The structured result is `{ ok, status: 'OK' | 'WARN' | 'BLOCK', findings[] }`;

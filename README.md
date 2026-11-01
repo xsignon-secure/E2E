@@ -184,6 +184,9 @@ Click [Install in Cursor](https://cursor.com/en/install-mcp?name=playwright-e2e&
 or go to **Settings → MCP → Add new MCP server** and paste the standard config. For one
 project only, put it in `.cursor/mcp.json`.
 
+Only fixing failing tests? [Install the core tools only](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==): the seven-tool fix loop
+(`--tools=core`), about 5k tokens of tool definitions instead of 16k.
+
 </details>
 
 <details>
@@ -341,7 +344,7 @@ MCP tool annotations (`readOnlyHint`, `destructiveHint`, …), so clients can sh
 prompts.
 
 **Only need the fix loop?** `--tools=core` (or `PW_MCP_TOOLS=core`) exposes seven tools and cuts the
-tool-definition context by about three quarters. Other profiles: `triage`, `inspect`, `author`.
+tool-definition context by about three quarters ([one-click core install for Cursor](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==)). Other profiles: `triage`, `inspect`, `author`.
 
 <details>
 <summary><b>Typical workflow</b></summary>
@@ -409,6 +412,8 @@ steps:
 
 A complete, ready-to-copy workflow is available in [`examples/github-actions/playwright-e2e.yml`](examples/github-actions/playwright-e2e.yml), including artifact upload and commented options for `guard: true` and Pro Cloud.
 
+**GitLab CI:** [`examples/gitlab-ci/playwright-e2e.yml`](examples/gitlab-ci/playwright-e2e.yml) runs the heal guard on merge requests, the same `ci` diagnosis, and posts the report as a merge request comment when you give it a project access token. Any other CI (Jenkins, CircleCI, AWS CodeBuild) works the same way: run `npx -y playwright-e2e-mcp ci --output e2e-report.md` and keep the file.
+
 Inputs: `project-root`, `args`, `flaky-runs`, `suggest`, `comment`, `review`,
 `verify-fixes`, `guard`, `pro-key`, `pro-url`, `fail-on-failure`, `version`, `github-token`. Outputs: `exit-code`,
 `report`, `guard`.
@@ -437,6 +442,7 @@ npx -y playwright-e2e-mcp guard --base origin/main   # exit 1 on BLOCK; --strict
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
 | `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
+| `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |
 | `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` | — | Optional, paid: Pro key and Pro Cloud address. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `pro-key` / `pro-url` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere |
@@ -511,6 +517,7 @@ browsing and this server for running, diagnosing and fixing the suite. They work
 
 - [Tool reference](docs/tools.md): every argument, example outputs, edge cases handled
 - [Hosted endpoint](docs/hosted-endpoint.md): the HTTP bridge for ChatGPT and claude.ai connectors
+- [Architecture](ARCHITECTURE.md): how the server is built and the design decisions behind it
 - [Security](SECURITY.md): the security model and how to report a vulnerability
 - [Development](docs/development.md): building, tests, Docker, signing and releasing
 - [Contributing](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md)

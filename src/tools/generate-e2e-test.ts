@@ -414,6 +414,13 @@ async function walkFlow(
 ): Promise<ToolResponse> {
   const state = await resolvePageState({ actions: args.steps, storageState: args.storageState }, root, entryUrl, ctx);
   const steps = state.actions ?? [];
+  if (steps.some((step) => step.type === 'switchTab')) {
+    return toolError(
+      'INVALID_INPUT',
+      'switchTab steps cannot be written into a generated spec yet',
+      "A spec has to wait for the popup with `const popup = await page.waitForEvent('popup')` around the click that opens it. Walk the flow up to the click, then add the popup handling by hand, or use inspect-page with switchTab to explore the new tab.",
+    );
+  }
   const timeoutMs = Math.max(30_000, 10_000 + steps.length * 12_000);
   const outcome = await runBrowserScript(
     {

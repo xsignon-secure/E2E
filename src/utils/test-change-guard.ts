@@ -144,6 +144,103 @@ function closingParen(masked: string, open: number): number {
   return -1;
 }
 
+/** Index of the brace closing the one at `open` in masked code, or -1. */
+function closingBrace(masked: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < masked.length; i += 1) {
+    const c = masked[i];
+    if (c === '{' || c === '(' || c === '[') depth += 1;
+    else if (c === '}' || c === ')' || c === ']') {
+      depth -= 1;
+      if (depth === 0) return c === '}' ? i : -1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Measure the try statements in masked code: `unsafe` counts tries whose
+ * catch neither rethrows nor asserts (a try/finally, or a catch that
+ * throws, still fails the test); `swallowedAssertions` counts the unsafe
+ * ones that wrap an assertion, which can then never fail.
+ */
+export function tryShapes(masked: string): { unsafe: number; swallowedAssertions: number } {
+  let unsafe = 0;
+  let swallowedAssertions = 0;
+  for (const match of masked.matchAll(/\btry\s*\{/g)) {
+    const open = match.index! + match[0].length - 1;
+    const close = closingBrace(masked, open);
+    if (close < 0) continue;
+    const handler = /^\s*catch\s*(?:\([^)]*\)\s*)?\{/.exec(masked.slice(close + 1));
+    if (!handler) continue; // try/finally: the error still propagates
+    const catchOpen = close + 1 + handler[0].length - 1;
+    const catchClose = closingBrace(masked, catchOpen);
+    if (catchClose < 0) continue;
+    const catchBody = masked.slice(catchOpen + 1, catchClose);
+    if (/\bthrow\b|\bexpect\s*\(|\btest\.fail\s*\(/.test(catchBody)) continue;
+    unsafe += 1;
+    if (/\bexpect(?:\.soft|\.poll)?\s*\(/.test(masked.slice(open, close))) swallowedAssertions += 1;
+  }
+  return { unsafe, swallowedAssertions };
+}
+
+/** Matchers that return a promise (web-first assertions on a locator, page or response). */
+const ASYNC_MATCHERS = new Set([
+  'toBeAttached',
+  'toBeChecked',
+  'toBeDisabled',
+  'toBeEditable',
+  'toBeEmpty',
+  'toBeEnabled',
+  'toBeFocused',
+  'toBeHidden',
+  'toBeInViewport',
+  'toBeVisible',
+  'toBeOK',
+  'toContainText',
+  'toHaveAccessibleDescription',
+  'toHaveAccessibleName',
+  'toHaveAttribute',
+  'toHaveClass',
+  'toHaveCount',
+  'toHaveCSS',
+  'toHaveId',
+  'toHaveJSProperty',
+  'toHaveRole',
+  'toHaveScreenshot',
+  'toHaveText',
+  'toHaveTitle',
+  'toHaveURL',
+  'toHaveValue',
+  'toHaveValues',
+  'toMatchAriaSnapshot',
+]);
+
+/**
+ * Count web-first assertions used as a bare statement without `await`:
+ * the test moves on (and can finish) before they settle, so they never
+ * fail it. Only statement-start calls count; an expect handed to
+ * Promise.all, assigned or returned is left alone.
+ */
+export function unawaitedAssertions(masked: string): number {
+  let n = 0;
+  for (const match of masked.matchAll(/\bexpect(\.soft|\.poll)?\s*\(/g)) {
+    const at = match.index!;
+    if (masked[at - 1] === '.') continue;
+    let k = at - 1;
+    while (k >= 0 && /\s/.test(masked[k])) k -= 1;
+    const prev = k < 0 ? ';' : masked[k];
+    if (prev !== ';' && prev !== '{' && prev !== '}') continue; // await / return / argument / assignment
+    const open = at + match[0].length - 1;
+    const close = closingParen(masked, open);
+    if (close < 0) continue;
+    const rest = /^\s*(?:\.\s*not\s*)?\.\s*(to[A-Z]\w*)\s*\(/.exec(masked.slice(close + 1));
+    if (!rest) continue;
+    if (match[1] === '.poll' || ASYNC_MATCHERS.has(rest[1])) n += 1;
+  }
+  return n;
+}
+
 /** The string literal starting at `at` in the original source (after whitespace), or undefined. */
 function stringArgument(source: string, at: number): string | undefined {
   let i = at;
@@ -189,6 +286,10 @@ export interface TestShape {
   forced: number;
   swallowed: number;
   tries: number;
+  /** try blocks around an assertion whose catch neither rethrows nor asserts. */
+  swallowedAssertions: number;
+  /** Web-first assertions left without `await`. */
+  unawaited: number;
   maxTimeout: number;
   strong: number;
   weak: number;
@@ -251,6 +352,7 @@ export function shapeOf(source: string): FileShape {
     while (shapes.has(key)) key += ' (again)';
     const body = masked.slice(block.start, block.end + 1);
     const matchers = [...body.matchAll(/\.(to[A-Z]\w*)\s*\(/g)].map((m) => m[1]);
+    const trying = tryShapes(body);
     shapes.set(key, {
       key,
       title: block.title,
@@ -262,7 +364,9 @@ export function shapeOf(source: string): FileShape {
       hardWaits: count(body, /\.waitForTimeout\s*\(/g),
       forced: count(body, /\bforce\s*:\s*true\b/g),
       swallowed: count(body, /\.catch\s*\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*(?:\{\s*\}|undefined|null|void 0|false|true)\s*\)/g),
-      tries: count(body, /\btry\s*\{/g),
+      tries: trying.unsafe,
+      swallowedAssertions: trying.swallowedAssertions,
+      unawaited: unawaitedAssertions(body),
       maxTimeout: maxNumber(body, /(?:\btimeout\s*:\s*|\bsetTimeout\s*\(\s*)([\d_]+)/g),
       strong: matchers.filter((m) => STRONG.has(m)).length,
       weak: matchers.filter((m) => WEAK.has(m)).length,
@@ -391,8 +495,23 @@ function compareTest(old: TestShape, now: TestShape, findings: GuardFinding[]): 
   if (now.forced > old.forced) {
     findings.push({ severity: 'warn', rule: 'force-added', ...where, message: '`force: true` was added: the click skips the checks that catch a covered or disabled element.' });
   }
-  if (now.swallowed > old.swallowed || now.tries > old.tries) {
-    findings.push({ severity: 'warn', rule: 'error-swallowed', ...where, message: 'A `try` block or empty `.catch()` was added: a failing step can now pass silently.' });
+  if (now.swallowedAssertions > old.swallowedAssertions) {
+    findings.push({
+      severity: 'block',
+      rule: 'assertion-swallowed',
+      ...where,
+      message: 'An assertion was wrapped in `try` with a `catch` that neither rethrows nor asserts: it can no longer fail the test.',
+    });
+  } else if (now.swallowed > old.swallowed || now.tries > old.tries) {
+    findings.push({ severity: 'warn', rule: 'error-swallowed', ...where, message: 'A `try` without a rethrow, or an empty `.catch()`, was added: a failing step can now pass silently.' });
+  }
+  if (now.unawaited > old.unawaited) {
+    findings.push({
+      severity: 'warn',
+      rule: 'assertion-not-awaited',
+      ...where,
+      message: 'A web-first assertion (toBeVisible, toHaveText…) is missing `await`: the test can finish before it settles, so it never fails.',
+    });
   }
   if (now.maxTimeout > Math.max(old.maxTimeout * 2, 30_000)) {
     findings.push({
