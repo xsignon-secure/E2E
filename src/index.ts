@@ -102,6 +102,7 @@ async function main(): Promise<void> {
         '  PW_MCP_BLOCK_PRIVATE_URLS  1 = URL tools refuse private/loopback/metadata addresses',
         '  PW_MCP_HISTORY_URL / PW_MCP_HISTORY_TOKEN  optional self-hosted shared history server; unset = no network calls',
         '  PW_MCP_BLOCK_WRITES        1 = page tools abort POST/PUT/PATCH/DELETE no mock answers',
+        '  PW_MCP_BLOCK_RESOURCES     page tools skip these: image,media,font,stylesheet,trackers',
         '  PW_MCP_PYTHON              Python for pytest-playwright projects (default: project venv, python3)',
         '  PW_MCP_CONNECT             Remote browser for page tools: ws(s):// Playwright endpoint or cdp:<url>',
         '  GITHUB_TOKEN/GITLAB_TOKEN  Let load-report download a CI run from its URL',
