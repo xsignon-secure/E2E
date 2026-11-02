@@ -457,7 +457,8 @@ When the project has no Node Playwright but has pytest settings (`pytest.ini`, `
   `expect`s, `@pytest.mark.skip` / `xfail`, `try: … except: pass` around an assertion, weaker
   matchers, `wait_for_timeout`, `force=True`. **`check-mocks`** reads `route.fulfill(json=…)`.
 - **`suggest-fix`** patches `.py` files too: the new locator is written in Python syntax
-  (`get_by_role("button", name="Buy")`) and verified with a pytest re-run.
+  (`get_by_role("button", name="Buy")`) and verified with a pytest re-run. It checks the locator on
+  the DOM at failure with Node Playwright, like the page tools.
 - Not yet for Python: **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`** and
   **`generate-e2e-test`** read and write TypeScript/JavaScript specs only. The page tools launch the browser with Node Playwright, so they need `@playwright/test`
   installed in the project.

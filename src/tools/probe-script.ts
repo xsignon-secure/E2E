@@ -789,13 +789,24 @@ function summariseRequests(requests, timings, pageUrl) {
       try {
         if (cfg.serverlessChromium) pw = req('playwright-core');
       } catch (errC) {}
+      // No Node Playwright in the project (a pytest-playwright project):
+      // use one installed next to this server, if there is one.
+      if (!pw && cfg.serverRoot) {
+        const own = createRequire(cfg.serverRoot + '/package.json');
+        for (const name of ['playwright', '@playwright/test']) {
+          try {
+            pw = own(name);
+            break;
+          } catch (errD) {}
+        }
+      }
     }
     if (!pw) {
       send({
         ok: false,
         kind: 'NO_PLAYWRIGHT',
         error: 'Playwright is not installed in ' + cfg.projectRoot,
-        hint: 'Run: npm install -D @playwright/test && npx playwright install',
+        hint: 'Run: npm install -D @playwright/test && npx playwright install (a pytest-playwright project needs it too: the page tools and suggest-fix drive the browser with Node Playwright)',
       });
       process.exit(1);
     }

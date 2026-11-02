@@ -42,7 +42,11 @@ import { extractJsonFromText } from '../utils/report-parser.js';
 import { BLOCKED_RANGES, assertUrlAllowed, blockPrivateUrls } from '../utils/url-policy.js';
 import { resolveEnvTokens } from '../utils/env-tokens.js';
 import { serverlessChromium, serverlessChromiumEnabled } from '../utils/serverless-chromium.js';
+import { fileURLToPath } from 'node:url';
 import type { StructuredResult } from './structured.js';
+
+/** This package's root folder (dist/tools/ is two levels down). */
+const SERVER_ROOT = fileURLToPath(new URL('../../', import.meta.url)).replace(/[\\/]+$/, '');
 
 /* ------------------------------------------------------------------ */
 /* State + responses                                                   */
@@ -1092,6 +1096,9 @@ export async function runBrowserScript(
       ...config,
       blockPrivate: blockPrivateUrls(),
       blockedRanges: BLOCKED_RANGES,
+      // A pytest project has no Node Playwright of its own; the probe can
+      // then fall back to one installed next to this server.
+      serverRoot: SERVER_ROOT,
       ...(serverless ? { serverlessChromium: { executablePath: serverless.executablePath, args: serverless.args } } : {}),
     }),
     'utf8',
