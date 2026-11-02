@@ -1,6 +1,6 @@
 {
   "name": "playwright-e2e-mcp",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "MCP server and agent skill that run, diagnose and fix failing Playwright tests (TypeScript and pytest): CI report diagnosis, trace analysis, verified locator fixes, flaky verdicts, breaking commits, heal guard, accessibility and Web Vitals audits.",
   "author": "xsignon-secure (https://github.com/xsignon-secure)",
   "mcpName": "io.github.xsignon-secure/E2E",
@@ -79,6 +79,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
     "axe-core": "^4.14.0",
+    "playwright-core": "1.64.1",
     "zod": "^4.2.0"
   },
   "devDependencies": {

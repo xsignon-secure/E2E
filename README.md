@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.13.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.13.0/playwright-e2e-mcp-0.13.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.13.1` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.13.1/playwright-e2e-mcp-0.13.1.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -446,7 +446,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.13.0
+  - uses: xsignon-secure/E2E@v0.13.1
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -495,8 +495,10 @@ When the project has no Node Playwright but has pytest settings (`pytest.ini`, `
   (`get_by_role("button", name="Buy")`) and verified with a pytest re-run. It checks the locator on
   the DOM at failure with Node Playwright, like the page tools.
 - Not yet for Python: **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`** and
-  **`generate-e2e-test`** read and write TypeScript/JavaScript specs only. The page tools launch the browser with Node Playwright, so they need `@playwright/test`
-  installed in the project.
+  **`generate-e2e-test`** read and write TypeScript/JavaScript specs only.
+- The page tools and `suggest-fix` drive the browser with Node Playwright. A Python project needs
+  nothing extra: the server brings its own `playwright-core`. If it reports a missing browser,
+  run the command it gives once (`npx -y playwright@<version> install chromium`).
 
 Results come from a small pytest plugin the server loads with `-p` from its temp folder; nothing
 is installed in your project. It uses your Python: `PW_MCP_PYTHON`, else `.venv`, `venv` or `env`
@@ -529,7 +531,8 @@ pip install pytest-playwright && playwright install chromium
 | `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
 | `PW_MCP_CONNECT` | — | Default remote browser for the page tools (same as `connect`): a Playwright server `ws(s)://…` endpoint (`npx playwright run-server`, Browserless, a device cloud's Playwright endpoint) or `cdp:` + a Chrome DevTools URL. `{{env:NAME}}` tokens in it are filled from the environment, so keys stay out of chat. Local server only; the HTTP bridge refuses it |
-| `GITHUB_TOKEN` / `GITLAB_TOKEN` | — | Only for `load-report` with a GitHub Actions run or GitLab job URL: read access to the run's artifacts (`GH_TOKEN` and `CI_JOB_TOKEN` work too) |
+| `GITHUB_TOKEN` / `GITLAB_TOKEN` | — | Only for `load-report` with a GitHub Actions run or GitLab job URL: read access to the run's artifacts (`GH_TOKEN` and `CI_JOB_TOKEN` work too). Sent only to github.com, gitlab.com and the hosts in `PW_MCP_CI_HOSTS` |
+| `PW_MCP_CI_HOSTS` | — | Your GitHub Enterprise or self-managed GitLab hosts (comma separated) that `load-report` may send `GITHUB_TOKEN` / `GITLAB_TOKEN` to. Run URLs on any other host are refused |
 | `PW_MCP_PYTHON` | project venv, then `python3` | The Python that runs a pytest-playwright suite |
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
@@ -611,11 +614,14 @@ a test.
   unless you point it at your own history server. The only other requests are `doctor` asking npm
   for the latest version number when you run it (`--offline` skips it), `load-report` downloading
   a CI run's artifacts when you give it a run URL, and a remote browser you name with `connect`.
-- **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and the
-  Playwright your project already has (Apache-2.0).
+- **Free dependencies only:** the MCP SDK (Apache-2.0), zod (MIT), axe-core (MPL-2.0) and
+  playwright-core (Apache-2.0). Test runs use the Playwright your project already has.
 
 ## 🆕 Recent releases
 
+- **0.13.1:** security fix: `load-report` only sends `GITHUB_TOKEN` / `GITLAB_TOKEN` to github.com,
+  gitlab.com and hosts in `PW_MCP_CI_HOSTS`, never along a redirect. Page tools and `suggest-fix`
+  now work in pytest projects installed from npm or Docker (the server ships `playwright-core`).
 - **0.13:** `load-report` takes a GitHub Actions or GitLab run URL, remote browsers and device
   clouds with `connect`, `suggest-fix` patches pytest files, guidance for testing AI chat and
   streaming UIs.

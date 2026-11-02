@@ -586,9 +586,12 @@ Given a run URL, it downloads the run's report-like artifacts (names containing
 `.playwright-e2e-mcp/ci/<run>/`, finds the JSON report or blob reports in them, and takes the
 commit, branch and run link from the CI API. It needs a token with read access, set where the
 server starts: `GITHUB_TOKEN` or `GH_TOKEN` (e.g. `GITHUB_TOKEN=$(gh auth token)`), or
-`GITLAB_TOKEN` (`read_api`) / `CI_JOB_TOKEN`. GitHub Enterprise and self-managed GitLab work
-from their URLs; `PW_MCP_GITHUB_API` / `PW_MCP_GITLAB_API` override the API address. Nothing
-is fetched unless you pass a URL.
+`GITLAB_TOKEN` (`read_api`) / `CI_JOB_TOKEN`. The token is only sent to github.com and
+gitlab.com, to the API set in `PW_MCP_GITHUB_API` / `PW_MCP_GITLAB_API`, or to a GitHub
+Enterprise or self-managed GitLab host you list in `PW_MCP_CI_HOSTS` (comma separated, e.g.
+`PW_MCP_CI_HOSTS=github.acme.com,gitlab.acme.com`); a URL naming any other host is refused, so
+a link planted in a page or log cannot collect your token. Redirects (artifact downloads go to
+storage) are followed without the token. Nothing is fetched unless you pass a URL.
 
 Or download the artifacts yourself, for example with
 `gh run download <run-id> -n playwright-report -D ci-artifacts`. The CI machine's absolute

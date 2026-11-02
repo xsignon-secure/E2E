@@ -83,6 +83,31 @@ jobs:
         env:
           PW_MCP_PYTHON: ${{ runner.temp }}/py/bin/python
 
+  installed:
+    name: installed package (page tools without Node Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium for the server's Playwright version
+        run: npx playwright install --with-deps chromium
+      - name: Pack and install the package as users get it (no devDependencies)
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/install"
+          cd "$RUNNER_TEMP/install"
+          npm init -y > /dev/null
+          npm install --omit=dev --no-audit --no-fund "$RUNNER_TEMP"/playwright-e2e-mcp-*.tgz
+      - name: inspect-page works from a pytest project
+        run: node scripts/installed-smoke.mjs "$RUNNER_TEMP/install/node_modules/playwright-e2e-mcp/dist/index.js"
+
   mcpb:
     name: mcpb bundle (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
