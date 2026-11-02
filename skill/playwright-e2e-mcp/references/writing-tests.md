@@ -101,6 +101,23 @@ parallel; `order: true` finds tests that depend on another test running first.
   ```
 - Replay a recorded session with `page.routeFromHAR` when the backend is slow or
   unstable.
+- Mocks are frozen copies of the API. Run `check-mocks` against the dev or staging
+  server (and `playwright-e2e-mcp mocks --base-url …` in CI) so a renamed field
+  fails a check instead of hiding behind a green suite.
+- Server-rendered apps (Next.js, Nuxt, Remix, Astro, SvelteKit) are clickable
+  before they hydrate. Wait for the app once, in a fixture or `beforeEach`, not
+  per click:
+
+  ```ts
+  // app: useEffect(() => { document.documentElement.dataset.hydrated = 'true' }, []) in the root layout
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('html[data-hydrated]')).toBeAttached();
+  });
+  ```
+
+  For Astro: `await expect(page.locator('astro-island[ssr]')).toHaveCount(0)`.
+  `inspect-page` shows how long the gap is on a given page.
 - Control time with `page.clock` (`install`, `setFixedTime`, `fastForward`)
   instead of waiting for timers, and pin `timezoneId` and `locale` in the config
   when dates are on screen.

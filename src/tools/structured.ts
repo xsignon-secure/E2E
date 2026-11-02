@@ -185,12 +185,13 @@ const TOOL_FIELDS: Readonly<Record<string, ReadonlyArray<keyof StructuredResult>
   'validate-selector': ['url', 'valid', 'matches', 'locator', 'httpStatus'],
   'save-login': ['status', 'valid', 'path', 'url', 'expiresAt'],
   'check-test-change': ['status', 'findings', 'total'],
+  'check-mocks': ['status', 'findings', 'total'],
   quarantine: ['status', 'total', 'declined'],
 };
 
 /**
  * The output schema for one tool: the envelope plus only that tool's fields,
- * so tools/list does not repeat every tool's fields nineteen times. Tools
+ * so tools/list does not repeat every tool's fields twenty times. Tools
  * with no fields of their own declare none (their results still carry the
  * envelope): each schema is context a client pays for on every request.
  */

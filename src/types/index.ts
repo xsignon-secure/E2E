@@ -378,6 +378,8 @@ export interface TestAttempt {
   expectedStatus?: string;
   durationMs: number;
   workerIndex?: number;
+  /** Assertions (expect steps) that ran in this attempt. */
+  assertions?: number;
   /** First line of the error, for failed attempts. */
   message?: string;
 }

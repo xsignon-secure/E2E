@@ -11,7 +11,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { z } from 'zod';
 import { PlaywrightMcpError } from '../types/index.js';
 import type { RunTestResult, ToolContext, ToolResponse } from '../types/index.js';
-import { applyFlakeFixes, scanFlakeRisks, SEVERITY_WEIGHT } from '../utils/flake-rules.js';
+import { applyFlakeFixes, scanFlakeRisks, SEVERITY_WEIGHT, ssrFramework } from '../utils/flake-rules.js';
 import type { FlakeFinding, FlakeSeverity } from '../utils/flake-rules.js';
 import { joinProjectPath, isPathInside, sanitizeUserPath, toNativePath, writeFileInsideRoot } from '../utils/path-utils.js';
 import { runTests } from '../utils/playwright-runner.js';
@@ -157,7 +157,7 @@ function findingData(f: FlakeFinding) {
 export const auditTestsTool = {
   name: 'audit-tests',
   description:
-    'Audit the Playwright test code for flake risks (hard waits, one-shot assertions instead of web-first ones, missing awaits, .only, force clicks, networkidle, element handles, layout selectors) and rank files by how flaky their tests have been in the run history. fix: true rewrites the mechanical ones, re-runs the touched files and restores them if the run fails.',
+    'Audit the Playwright test code for flake risks (hard waits, one-shot assertions instead of web-first ones, missing awaits, .only, force clicks, networkidle, element handles, layout selectors, acting right after goto on a server-rendered app before it hydrates) and rank files by how flaky their tests have been in the run history. fix: true rewrites the mechanical ones, re-runs the touched files and restores them if the run fails.',
   inputSchema: auditTestsInput,
   handler: async (args: AuditTestsInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('audit-tests', async () => {
@@ -173,6 +173,7 @@ export const auditTestsTool = {
       else if (testDir !== null && !isPathInside(testDir, root)) testDir = null;
 
       const wanted = args.filter?.toLowerCase();
+      const ssr = ssrFramework(await readFile(toNativePath(joinProjectPath(root, 'package.json')), 'utf8').then((text) => JSON.parse(text) as Parameters<typeof ssrFramework>[0], () => undefined));
       const files = (await findTestFiles(root, { testDir, limit: 2_000 })).filter((f) => !wanted || f.toLowerCase().includes(wanted));
       const minRank = RANK[args.minSeverity ?? 'low'];
       const sources = new Map<string, string>();
@@ -183,7 +184,7 @@ export const auditTestsTool = {
         if (!info || info.size > MAX_FILE_BYTES) continue;
         const source = await readFile(toNativePath(full), 'utf8');
         sources.set(file, source);
-        findings.push(...scanFlakeRisks(file, source).filter((f) => RANK[f.severity] >= minRank));
+        findings.push(...scanFlakeRisks(file, source, { ssr }).filter((f) => RANK[f.severity] >= minRank));
       }
 
       const history = await readHistory(root, args.historyRuns ?? 50).catch(() => []);

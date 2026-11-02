@@ -23,7 +23,8 @@ export type FlakeRule =
   | 'fragile-selector'
   | 'no-timeout'
   | 'hardcoded-url'
-  | 'serial-mode';
+  | 'serial-mode'
+  | 'act-before-hydration';
 
 export interface FlakeFinding {
   file: string;
@@ -85,6 +86,10 @@ export const RULES: Readonly<Record<FlakeRule, { severity: FlakeSeverity; messag
   'hardcoded-url': {
     severity: 'low',
     message: 'Hard-coded local URL: set baseURL in the config and goto a path, so the test runs against any environment.',
+  },
+  'act-before-hydration': {
+    severity: 'medium',
+    message: "First action right after goto on a server-rendered app: the HTML is clickable before hydration attaches its handlers, so the click or fill can be lost. Wait for a sign the app is interactive first, e.g. `await expect(page.locator('html[data-hydrated]')).toBeAttached()` (set by a root effect), and do it in a beforeEach or fixture.",
   },
   'serial-mode': {
     severity: 'low',
@@ -239,11 +244,39 @@ function statementFrom(lines: string[], index: number): string {
 }
 
 /** Scan one spec file's source. `file` is only copied into the findings. */
-export function scanFlakeRisks(file: string, source: string): FlakeFinding[] {
+/** Dependencies that make an app render on the server and hydrate in the browser. */
+const SSR_PACKAGES: ReadonlyArray<[string, string]> = [
+  ['next', 'Next.js'],
+  ['nuxt', 'Nuxt'],
+  ['@remix-run/react', 'Remix'],
+  ['@react-router/dev', 'React Router'],
+  ['astro', 'Astro'],
+  ['@sveltejs/kit', 'SvelteKit'],
+  ['gatsby', 'Gatsby'],
+  ['@angular/ssr', 'Angular SSR'],
+  ['@builder.io/qwik-city', 'Qwik'],
+  ['solid-start', 'SolidStart'],
+  ['@solidjs/start', 'SolidStart'],
+];
+
+/** The server-rendering framework a package.json depends on, if any (Qwik resumes, so it is left out). */
+export function ssrFramework(pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } | undefined): string | undefined {
+  const deps = { ...(pkg?.devDependencies ?? {}), ...(pkg?.dependencies ?? {}) };
+  const hit = SSR_PACKAGES.find(([name]) => name in deps);
+  return hit && hit[1] !== 'Qwik' ? hit[1] : undefined;
+}
+
+export interface FlakeScanOptions {
+  /** The app is server-rendered (by this framework): check for actions before hydration. */
+  ssr?: string;
+}
+
+export function scanFlakeRisks(file: string, source: string, options: FlakeScanOptions = {}): FlakeFinding[] {
   const lines = source.split(/\r?\n/);
   const findings: FlakeFinding[] = [];
   let inBlockComment = false;
   let currentTest: string | undefined;
+  let afterGoto = false;
 
   const add = (index: number, rule: FlakeRule, fix?: string): void => {
     const lineText = lines[index];
@@ -276,6 +309,18 @@ export function scanFlakeRisks(file: string, source: string): FlakeFinding[] {
 
     const title = TEST_TITLE.exec(code);
     if (title && !/\btest\.(describe|step|use|beforeEach|afterEach|beforeAll|afterAll|extend)\b/.test(code)) currentTest = title[2];
+
+    if (options.ssr) {
+      // A full navigation, then the first thing done is an input action
+      // with nothing in between that waits for the app to be interactive.
+      if (title) afterGoto = false;
+      if (/\bexpect\b|\.waitFor\w*\(|\.toBe\w*\(/.test(code)) afterGoto = false;
+      else if (afterGoto && /\.(click|dblclick|tap|fill|type|pressSequentially|press|check|uncheck|setChecked|selectOption)\(/.test(code)) {
+        add(i, 'act-before-hydration');
+        afterGoto = false;
+      }
+      if (/\.(goto|reload)\(/.test(code) && !/waitUntil\s*:\s*['"`]networkidle/.test(code)) afterGoto = true;
+    }
 
     if (/\.waitForTimeout\(/.test(code)) add(i, 'hard-wait');
     if (/new Promise\(\s*\(?\s*\w*\s*\)?\s*=>\s*setTimeout\(/.test(code) || /\bsetTimeout\(\s*\w+\s*,\s*\d+\s*\)\s*\)/.test(code)) add(i, 'sleep');

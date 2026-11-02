@@ -35,6 +35,7 @@ const EXPECTED_TOOLS = [
   'audit-performance',
   'audit-tests',
   'bisect-failure',
+  'check-mocks',
   'check-test-change',
   'compare-visual-state',
   'diagnose-flaky',

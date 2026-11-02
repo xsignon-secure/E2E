@@ -6,7 +6,7 @@
 src/
 ├── index.ts            # bin entry point (--version/--help, main-module guard)
 ├── server.ts           # McpServer setup, tool registration, shutdown handling
-├── tools/              # the nineteen tools, the probe script + shared plumbing
+├── tools/              # the twenty tools, the probe script + shared plumbing
 ├── prompts.ts          # fix-failing-test, triage-flaky-tests
 ├── utils/              # playwright-runner, report-parser, project-detector, path-utils,
 │                       # logger, trace-reader (trace.zip → DOM/network/console),
@@ -56,7 +56,7 @@ server over stdio against a live fixture app and a Playwright project under
 `e2e/fixture/`, then drives it exactly like an MCP client and asserts ~40 behaviours
 that only appear end-to-end:
 
-- initialize handshake, 19 tools, 2 prompts, spec tool annotations and object input schemas,
+- initialize handshake, 20 tools, 2 prompts, spec tool annotations and object input schemas,
 - verified locators, locator validation, signed-in pages (`storageState`) and page steps,
 - background runs with progress, run history views, and `suggest-fix` healing a drifted
   locator and an ambiguous one, verifying each with a re-run (and refusing when the
@@ -163,8 +163,8 @@ job requests for itself; if it is refused, the run names the setting to change.
 ## Verifying a published release
 
 ```bash
-git checkout v0.11.0 && npm ci && npm run mcpb
-npm run release:verify -- v0.11.0
+git checkout v0.12.0 && npm ci && npm run mcpb
+npm run release:verify -- v0.12.0
 ```
 
 The release notes promise that the tag rebuilds the published bundle byte for

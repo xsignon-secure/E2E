@@ -10,7 +10,7 @@
  * verified locally before it is deployed.
  *
  * The stdio transport in server.ts is untouched; this is an additional way to
- * reach the same nineteen tools.
+ * reach the same twenty tools.
  */
 
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http';

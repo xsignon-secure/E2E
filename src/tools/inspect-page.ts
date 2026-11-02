@@ -18,6 +18,7 @@ import {
   describePageState,
   describeRouteHits,
   describeTabs,
+  describeHydration,
   describeBlockedWrites,
   guard,
   loginHint,
@@ -165,7 +166,7 @@ export const inspectPageTool = {
         );
       }
 
-      const pageData = { url: data.finalUrl ?? url, matches: data.matchCount, ...(data.httpStatus !== undefined ? { httpStatus: data.httpStatus } : {}) };
+      const pageData = { url: data.finalUrl ?? url, matches: data.matchCount, ...(data.hydration ? { hydration: data.hydration } : {}), ...(data.httpStatus !== undefined ? { httpStatus: data.httpStatus } : {}) };
       const lines: string[] = [];
       const title = data.title ? `"${data.title}"` : '(no title)';
       lines.push(`## 🔎 ${title}`, '');
@@ -178,6 +179,7 @@ export const inspectPageTool = {
       const mocks = describeRouteHits(state, data.routeHits);
       if (mocks.length > 0) lines.push('**Network mocks:**', ...mocks);
       if (data.actionsDone?.length) lines.push(`**Steps run:** ${data.actionsDone.join('; ')}`);
+      lines.push(...describeHydration(data.hydration));
       lines.push(...describeTabs(data.tabs));
       lines.push(...describeBlockedWrites(data.blockedWrites));
       lines.push('');

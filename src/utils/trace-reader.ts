@@ -94,6 +94,26 @@ export interface FailureTraceContext {
   consoleMessages: TraceConsoleMessage[];
   /** Non-fatal parsing issues (missing snapshot, unknown format…). */
   warnings: string[];
+  /**
+   * A click/fill that ran while the page's JavaScript was still loading,
+   * before the step that failed: on a server-rendered page the element can
+   * be actionable before hydration attaches its handlers.
+   */
+  hydrationRace?: HydrationRace;
+  /** Console messages that report a hydration error or mismatch. */
+  hydrationErrors?: string[];
+}
+
+export interface HydrationRace {
+  /** The input action, e.g. `click`. */
+  action: string;
+  selector?: string;
+  /** Script URLs still downloading when the action ran (first few). */
+  scripts: string[];
+  /** How many scripts were still downloading. */
+  scriptCount: number;
+  /** How long after the action started the last of them finished (ms). */
+  pendingMs: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -834,5 +854,122 @@ export async function readFailureTrace(tracePath: string, options: TraceReadOpti
   context.failedRequests = failedRequests;
   context.networkTotal = networkTotal;
 
+  const networkTexts: string[] = [];
+  for (const [name, data] of entries) if (name.endsWith('.network')) networkTexts.push(decodeEntryText(data));
+  const race = detectHydrationRace(traceLines, networkTexts);
+  if (race) context.hydrationRace = race;
+  const hydrationErrors = hydrationErrorMessages(traceLines);
+  if (hydrationErrors.length > 0) context.hydrationErrors = hydrationErrors;
+
   return context;
+}
+
+/* ------------------------------------------------------------------ */
+/* Hydration race                                                      */
+/* ------------------------------------------------------------------ */
+
+const INPUT_METHODS = new Set(['click', 'dblclick', 'tap', 'fill', 'type', 'press', 'pressSequentially', 'check', 'uncheck', 'setChecked', 'selectOption', 'setInputFiles']);
+const HYDRATION_ERROR_RE = /hydrat|did not match\. server|server rendered html didn't match|text content does not match server|minified react error #(?:418|423|425)/i;
+
+/** Console messages from the trace that report a hydration error or mismatch. */
+export function hydrationErrorMessages(lines: string[]): string[] {
+  const out: string[] = [];
+  for (const line of lines) {
+    if (!line.includes('"console"') && !line.includes('pageError') && !line.includes('"error"')) continue;
+    let event: TraceEvent;
+    try {
+      event = JSON.parse(line) as TraceEvent;
+    } catch {
+      continue;
+    }
+    let text: string | undefined;
+    if (event.type === 'console' && (event.messageType === 'error' || event.messageType === 'warning') && typeof event.text === 'string') text = event.text;
+    else if (event.type === 'event' && event.method === 'pageError') {
+      const err = (event.params as { error?: { error?: { message?: unknown }; message?: unknown } } | undefined)?.error;
+      const message = err?.error?.message ?? err?.message;
+      if (typeof message === 'string') text = message;
+    }
+    if (text && HYDRATION_ERROR_RE.test(text) && out.length < 3) out.push(text.length > 300 ? `${text.slice(0, 300)}…` : text);
+  }
+  return out;
+}
+
+interface ScriptLoad {
+  url: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Find the last click/fill (or other input action) before the failing step
+ * that ran while scripts of the current page were still downloading.
+ * Times are the trace's monotonic milliseconds, shared by the action events
+ * and the network log. Returns undefined when the step that failed was the
+ * input action itself, or when every script had loaded by then.
+ */
+export function detectHydrationRace(traceLines: string[], networkTexts: string[]): HydrationRace | undefined {
+  const scripts: ScriptLoad[] = [];
+  const documents: number[] = [];
+  for (const text of networkTexts) {
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.includes('resource-snapshot')) continue;
+      let event: { type?: string; snapshot?: { request?: { url?: unknown }; _resourceType?: unknown; _monotonicTime?: unknown; time?: unknown } };
+      try {
+        event = JSON.parse(line) as typeof event;
+      } catch {
+        continue;
+      }
+      const snap = event.snapshot;
+      if (event.type !== 'resource-snapshot' || !snap || typeof snap._monotonicTime !== 'number') continue;
+      const url = typeof snap.request?.url === 'string' ? snap.request.url : '';
+      const type = typeof snap._resourceType === 'string' ? snap._resourceType : '';
+      if (type === 'document') documents.push(snap._monotonicTime);
+      const isScript = type === 'script' || (type === '' && /\.m?js(?:[?#]|$)/.test(url));
+      if (isScript && typeof snap.time === 'number' && snap.time >= 0) {
+        scripts.push({ url, start: snap._monotonicTime, end: snap._monotonicTime + snap.time });
+      }
+    }
+  }
+  if (scripts.length === 0) return undefined;
+
+  interface Input { method: string; selector?: string; start: number; callId?: string }
+  const inputs: Input[] = [];
+  let failedCall: string | undefined;
+  let failedAt: number | undefined;
+  for (const line of traceLines) {
+    if (line.trim() === '') continue;
+    let event: TraceEvent;
+    try {
+      event = JSON.parse(line) as TraceEvent;
+    } catch {
+      continue;
+    }
+    if (event.type === 'before' && typeof event.method === 'string' && INPUT_METHODS.has(event.method) && typeof event.startTime === 'number' && event.class !== 'Test') {
+      const selector = typeof event.params?.selector === 'string' ? event.params.selector : undefined;
+      inputs.push({ method: event.method, selector, start: event.startTime, callId: event.callId });
+    }
+    if (event.type === 'after' && failedAt === undefined && eventError(event) !== undefined && typeof event.endTime === 'number') {
+      failedCall = event.callId;
+      failedAt = event.endTime;
+    }
+  }
+  if (failedAt === undefined) return undefined;
+  const before = inputs.filter((input) => input.start < (failedAt as number) && input.callId !== failedCall);
+  if (failedCall && inputs.some((input) => input.callId === failedCall)) return undefined;
+  for (let i = before.length - 1; i >= 0; i -= 1) {
+    const input = before[i];
+    const page = Math.max(-Infinity, ...documents.filter((t) => t <= input.start));
+    // Still downloading when the action began; a script the action itself
+    // triggered (a lazy chunk) starts after it and is left out.
+    const pending = scripts.filter((s) => s.start >= page && s.start < input.start + 100 && s.end > input.start);
+    if (pending.length === 0) continue;
+    return {
+      action: input.method,
+      selector: input.selector,
+      scripts: pending.slice(0, 3).map((s) => (s.url.length > 160 ? `${s.url.slice(0, 160)}…` : s.url)),
+      scriptCount: pending.length,
+      pendingMs: Math.round(Math.max(...pending.map((s) => s.end)) - input.start),
+    };
+  }
+  return undefined;
 }

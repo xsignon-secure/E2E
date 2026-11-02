@@ -32,6 +32,8 @@ import { detectPytestProject } from '../utils/pytest-runner.js';
 import { relativeToRoot } from '../utils/path-utils.js';
 import { recordRun } from '../utils/run-history.js';
 import { classifyFailure } from '../utils/report-parser.js';
+import { readFailureTrace } from '../utils/trace-reader.js';
+import { renderHydration } from './get-failure.js';
 import {
   clipLines,
   formatDuration,
@@ -359,6 +361,25 @@ const VERDICT_RANK: Record<FlakyVerdict, number> = {
   'NOT REPRODUCING': 1,
   'NO TESTS RAN': 0,
 };
+
+/**
+ * Read the traces of a few failing runs and report a hydration race (an
+ * input action while the page's scripts were still loading) or hydration
+ * errors: the classic cause of a click that works on some runs only.
+ */
+async function hydrationClues(pass: PassResult): Promise<string[]> {
+  const traces = pass.runs
+    .flatMap((run) => run.result.failures ?? [])
+    .map((failure) => failure.tracePath)
+    .filter((path): path is string => typeof path === 'string');
+  for (const path of [...new Set(traces)].slice(0, 3)) {
+    const trace = await readFailureTrace(path).catch(() => null);
+    if (!trace) continue;
+    const notes = renderHydration(trace);
+    if (notes.length > 0) return notes;
+  }
+  return [];
+}
 
 function verdictBlock(summary: FlakySummary): string {
   const { verdict } = summary;
@@ -842,6 +863,7 @@ export const diagnoseFlakyTool = {
         lines.push(...renderRunTable(main));
       }
       lines.push('', ...renderVerdicts(main), '');
+      lines.push(...(await hydrationClues(main)));
 
       if (isolate) {
         lines.push(`### Parallel vs alone (\`--workers=${parallelWorkers}\` fully parallel → \`--workers=1\`)`, '');

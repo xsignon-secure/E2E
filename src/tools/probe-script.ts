@@ -575,6 +575,58 @@ async function runActions(page, actions, timeout) {
 
 // Runs in every new document before its own scripts, so no early paint,
 // shift or long task is missed.
+// Hydration watch: which framework rendered the page, whether its HTML came
+// from the server, and how long controls were on screen before the
+// framework attached its handlers (clicks in that window do nothing).
+function hydrationInit() {
+  const H = { framework: null, ssr: false, state: 'none', firstControlMs: null, hydratedMs: null, islands: 0 };
+  Object.defineProperty(window, '__pwmcpHydration', { value: H, configurable: true });
+  const keys = (el) => { try { return Object.keys(el); } catch (err) { return []; } };
+  const hasKey = (el, prefix) => !!el && keys(el).some((k) => k.indexOf(prefix) === 0);
+  const started = performance.now();
+  const scan = () => {
+    const d = document;
+    const w = window;
+    if (!d.documentElement) return false;
+    const roots = [d, d.documentElement, d.body, d.getElementById('__next'), d.getElementById('root'), d.getElementById('app'), d.getElementById('__nuxt'), d.getElementById('___gatsby'), d.body && d.body.firstElementChild].filter(Boolean);
+    const control = d.querySelector('button, a[href], input:not([type=hidden]), select, textarea, [role=button]');
+    if (control && H.firstControlMs === null) H.firstControlMs = Math.round(performance.now());
+    let fw = null;
+    let ssr = false;
+    let hydrated = null;
+    const react = roots.some((r) => hasKey(r, '__reactContainer$')) || (control && hasKey(control, '__reactProps$'));
+    const vue = roots.some((r) => r.__vue_app__ || r.__vue__);
+    const islands = d.querySelectorAll('astro-island').length;
+    if (w.__NEXT_DATA__ || w.__next_f) { fw = 'Next.js'; ssr = true; hydrated = react; }
+    else if (w.__remixContext || w.__reactRouterContext) { fw = w.__remixContext ? 'Remix' : 'React Router'; ssr = true; hydrated = react; }
+    else if (d.getElementById('___gatsby')) { fw = 'Gatsby'; ssr = true; hydrated = react; }
+    else if (w.__NUXT__ || d.getElementById('__NUXT_DATA__') || d.getElementById('__nuxt')) { fw = 'Nuxt'; ssr = !!(w.__NUXT__ || d.getElementById('__NUXT_DATA__')); hydrated = vue; }
+    else if (islands > 0) { fw = 'Astro'; ssr = true; H.islands = d.querySelectorAll('astro-island[ssr]').length; hydrated = H.islands === 0; }
+    else if (d.querySelector('[q\\:container]')) { fw = 'Qwik'; ssr = true; hydrated = null; }
+    else if (keys(w).some((k) => k.indexOf('__sveltekit') === 0)) { fw = 'SvelteKit'; ssr = true; hydrated = null; }
+    else if (d.querySelector('[ng-server-context]') || d.querySelector('[ngh]')) { fw = 'Angular'; ssr = true; hydrated = null; }
+    else if (d.querySelector('[data-server-rendered]')) { fw = 'Vue'; ssr = true; hydrated = vue; }
+    else if (react) { fw = 'React'; hydrated = true; }
+    else if (vue) { fw = 'Vue'; hydrated = true; }
+    else if (d.querySelector('[ng-version]')) { fw = 'Angular'; hydrated = true; }
+    H.framework = fw;
+    H.ssr = ssr;
+    if (hydrated === true) {
+      if (H.hydratedMs === null) H.hydratedMs = Math.round(performance.now());
+      H.state = 'hydrated';
+      return true;
+    }
+    H.state = fw ? (hydrated === null ? 'unknown' : 'pending') : 'none';
+    return false;
+  };
+  const tick = () => {
+    let done = false;
+    try { done = scan(); } catch (err) { /* keep watching */ }
+    if (!done && performance.now() - started < 20000) setTimeout(tick, 20);
+  };
+  tick();
+}
+
 function perfInit() {
   const P = { lcp: null, shifts: [], longTasks: [], events: [] };
   Object.defineProperty(window, '__pwmcpPerf', { value: P, configurable: true });
@@ -835,6 +887,8 @@ function summariseRequests(requests, timings, pageUrl) {
     }
 
     if (cfg.mode === 'perf') await context.addInitScript(perfInit);
+    const watchHydration = cfg.mode === 'inspect' && !cfg.snapshotHtmlPath;
+    if (watchHydration) await context.addInitScript(hydrationInit);
     let page = await context.newPage();
 
     // perf: count bytes per request over CDP (cross-origin sizes included)
@@ -1168,6 +1222,14 @@ function summariseRequests(requests, timings, pageUrl) {
       if (cfg.device && page.viewportSize()) data.viewport = page.viewportSize();
     }
 
+    if (watchHydration) {
+      // A server-rendered page that has not hydrated yet gets a few seconds.
+      await page.waitForFunction(() => { const h = window.__pwmcpHydration; return !h || h.state !== 'pending'; }, null, { timeout: Math.min(cfg.waitTimeout || 5000, 5000), polling: 50 }).catch(() => undefined);
+      data.hydration = await page.evaluate(() => {
+        const h = window.__pwmcpHydration;
+        return h && h.framework ? { framework: h.framework, ssr: h.ssr, state: h.state, firstControlMs: h.firstControlMs, hydratedMs: h.hydratedMs, islands: h.islands } : undefined;
+      }).catch(() => undefined);
+    }
     data.consoleMessages = consoleMessages;
     data.actionsDone = actionsDone;
     if (context.pages().length > 1) data.tabs = await listTabs(context, page);

@@ -37,6 +37,9 @@ their `index` numbers stay the ones `get-failure` takes.
 Returns the message and code frame, expected vs actual, stack, failure kind and
 diagnosis, console output, the DOM snapshot at failure with the failed action and
 its selector, failed network requests, console errors and warnings, and next steps.
+Since 0.12.0 it also flags a **possible hydration race** (a click or fill that ran
+while the page's scripts were still downloading) and hydration errors in the
+console; `diagnose-flaky` repeats the note when a failing run shows it.
 
 ## load-report
 
@@ -80,7 +83,10 @@ name first), unique CSS selector, tag, visibility, box, text and attributes,
 plus console messages. `validate-selector`, `compare-visual-state`,
 `audit-accessibility` and `audit-performance` take the same `storageState`,
 `headers`, `actions`, `routes`, `har`, `browser` and `viewport`
-(`audit-performance` is Chromium-only).
+(`audit-performance` is Chromium-only). On a server-rendered page (0.12.0+) a
+**Hydration** line names the framework and how long controls were on screen
+before hydration, with the wait to add to the tests (`html[data-hydrated]` set by
+a root effect, or `astro-island[ssr]` gone for Astro).
 
 ## validate-selector
 
@@ -260,7 +266,7 @@ commit after its last passing streak and the last good one.
 
 Rules: `hard-wait`, `sleep`, `non-retrying-assertion`, `missing-await`,
 `focused-test` (high); `force-action`, `networkidle`, `element-handle`,
-`fragile-selector`, `no-timeout` (medium); `hardcoded-url`, `serial-mode` (low).
+`fragile-selector`, `no-timeout`, `act-before-hydration` (medium; only for server-rendered apps, 0.12.0+); `hardcoded-url`, `serial-mode` (low).
 Only `non-retrying-assertion`, `missing-await` and `focused-test` are fixed
 mechanically. Files rank by findings weighted by their flaky rate in the history.
 
@@ -301,11 +307,31 @@ Only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*` and names in
 | `base` | string | Git ref (default `HEAD`: the uncommitted changes; `origin/main` for the branch) |
 | `files` | string[] | Only these files |
 | `file` + `after` | string | Check a proposed full file content before writing it |
+| `runtime` | boolean | 0.12.0+: also run old and new version of each changed TS/JS spec and compare the assertions that ran per test |
 
 `status` is `OK`, `WARN` or `BLOCK`; `ok` is false only on BLOCK. BLOCK: fewer
-assertions in a test, a removed or skipped test, `.only`, a deleted spec. WARN:
-`expect.soft`, a weaker matcher, `waitForTimeout`, `force: true`, a swallowed
-error, a raised timeout, retries or screenshot tolerance.
+assertions in a test, a removed or skipped test, `.only`, a deleted spec, an
+assertion moved under an `if` / `&&` / `?`, and (runtime) fewer assertions
+executed. WARN: `expect.soft`, a weaker matcher, `waitForTimeout`, `force: true`,
+a swallowed error, an early `return`, a raised timeout, retries or screenshot
+tolerance. Since 0.12.0 it also reads pytest files (`test_*.py`).
+
+## check-mocks (0.12.0+)
+
+| Argument | Type | Notes |
+| --- | --- | --- |
+| `baseUrl` | string | Live server for relative mock URLs (default: `use.baseURL` from the config) |
+| `urls` | object | Real URL for each wildcard/regex mock: `{ "**/api/items/*": "/api/items/1" }` |
+| `headers` | object | Headers for the live calls; write `{{env:E2E_API_TOKEN}}`, never a token |
+| `filter` | string | Only test files whose path contains this text |
+
+Finds `route.fulfill` JSON bodies (TS/JS and pytest) and `routeFromHAR` files, GETs
+each mocked endpoint and compares JSON shapes. `status` is `OK`, `DRIFT` or
+`NOTHING CHECKED`. High: `missing-field`, `type-changed`, `endpoint-gone`,
+`not-json`. Medium: `now-null`, `status-changed`, `server-error`. Low: `new-field`.
+Write mocks (POST…), error mocks and runtime-built bodies are skipped with a reason.
+On DRIFT, update the mock to the live shape and run the tests: the app code that
+reads the changed field is what breaks in production.
 
 ## quarantine (0.7.0+)
 

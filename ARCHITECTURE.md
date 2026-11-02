@@ -28,7 +28,7 @@ project, so the version you test with is the version the server uses.
 ## 1. Tool definitions cost tokens on every request
 
 An MCP client sends every tool's name, description and input schema with every model
-request. All nineteen tools cost about 11.5k tokens; that is paid again on each turn, whether or
+request. All twenty tools cost about 11.9k tokens; that is paid again on each turn, whether or
 not a tool is called.
 
 Decisions that follow from this:
@@ -126,12 +126,39 @@ its old self and blocks those changes.
   needs no TypeScript or Babel dependency, handles files that do not compile yet (an agent's
   half-finished edit), and runs in milliseconds.
 - **BLOCK** a test that checks less: fewer assertions, a removed or skipped test, `.only`, an
-  assertion wrapped in a `try` whose `catch` neither rethrows nor asserts, a deleted file.
+  assertion wrapped in a `try` whose `catch` neither rethrows nor asserts, an assertion that
+  always ran moved under an `if` (or after `&&` / `?`), a deleted file.
 - **WARN** a test that became weaker or slower to fail: a looser matcher, `expect.soft`, a
-  hard wait, `force: true`, an un-awaited web-first assertion, a timeout or retry count blown
-  up. A `try` that rethrows is not flagged.
+  hard wait, `force: true`, an un-awaited web-first assertion, an early `return` before later
+  assertions, a timeout or retry count blown up. A `try` that rethrows is not flagged.
+- **Run time, not just text.** A lexical scan can always be dodged by a clever enough edit, so
+  `runtime: true` runs the old version (a temporary copy next to the spec) and the new one and
+  counts the `expect` steps each test executed, through the attempts reporter's `onStepEnd`.
+  Fewer assertions at run time is a BLOCK, whatever the code looks like. It is opt-in because it
+  runs the tests twice.
+- **pytest too.** `test_*.py` files get their own masker and measures (`assert`, `expect(...)`,
+  pytest marks, `try/except: pass`, snake_case matchers) feeding the same comparison.
 
-## 6. Diagnosis that survives missing data
+## 6. Hydration races and mock drift
+
+Two ways a suite stays green while users see a broken app:
+
+- **Clicking before hydration.** Server-rendered HTML is actionable before the framework has
+  attached its handlers. The trace reader lines up input actions with the network log (both use
+  the trace's monotonic clock): a click or fill that started while page scripts were still
+  downloading, followed by a failing step, is reported as a possible hydration race, and
+  hydration errors are picked out of the console. `inspect-page` adds an init script that
+  watches for each framework's public hydration sign (React's root container, Vue's
+  `__vue_app__`, Astro islands losing `ssr`) and measures how long controls were on screen
+  before it. `audit-tests` flags a click right after `goto` only when `package.json` depends on
+  a server-rendering framework, to keep false alarms down.
+- **Mocks that drifted.** `check-mocks` reads `route.fulfill` bodies with a small literal
+  parser (objects, arrays, strings, numbers, booleans, Python's `True`/`None`); anything computed
+  is marked unknown and left out, so every finding is about a field the mock really states. It
+  compares shapes, not values, sends only GET requests (write mocks are listed, never
+  replayed), and checks every redirect hop against the URL policy.
+
+## 7. Diagnosis that survives missing data
 
 - **No trace?** `get-failure` still returns the message, code frame, expected vs actual,
   stack and failure kind from the JSON report, and says how to capture a trace next time.
@@ -153,17 +180,16 @@ its old self and blocks those changes.
 | MCP tasks for long runs | Waiting for SDK support. Tasks are an optional extension in the 2026 spec; progress, cancel and background runs cover the need today. |
 | A hosted, stateless history store | The local file stays the default. `history-server/` is the self-hosted shared variant (file or Postgres storage). |
 
-## 7. Python projects behind the same tools
+## 8. Python projects behind the same tools
 
 A project with no Node Playwright but a pytest configuration (`pytest.ini`, `[tool.pytest…]`,
 `conftest.py`, …) is run with `python -m pytest` (`src/utils/pytest-runner.ts`). Results come
 from a small plugin the server writes to its temp folder and loads with `-p`, so nothing is
 installed in the project; it writes one line per finished test, which keeps killed runs useful
 in the same way as the Node live reporter. The result has the same shape as a Node run, so
-`get-failure` reads pytest-playwright's traces with the same trace reader. Patching Python
-specs, flaky diagnosis and the heal guard are still Node only.
+`get-failure` reads pytest-playwright's traces with the same trace reader, and the heal guard
+and `check-mocks` read `.py` files. Patching Python specs and flaky diagnosis are still Node only.
 
 ## Roadmap
 
-- Python: locator fixes for `.py` specs (`suggest-fix`), flaky diagnosis through pytest-repeat,
-  and heal-guard rules for pytest files.
+- Python: locator fixes for `.py` specs (`suggest-fix`) and flaky diagnosis through pytest-repeat.

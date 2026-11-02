@@ -1,5 +1,5 @@
 /**
- * MCP server setup: creates the McpServer instance, registers the nineteen
+ * MCP server setup: creates the McpServer instance, registers the twenty
  * tools (with spec tool annotations) and the workflow prompts, and wires
  * each invocation to a ToolContext (per-tool logger, abort signal, progress
  * reporter, shared store, default project root).
@@ -40,6 +40,7 @@ import { bisectFailureTool } from './tools/bisect-failure.js';
 import { saveLoginTool } from './tools/save-login.js';
 import { checkTestChangeTool } from './tools/check-test-change.js';
 import { quarantineTool } from './tools/quarantine.js';
+import { checkMocksTool } from './tools/check-mocks.js';
 import { registerPrompts } from './prompts.js';
 import { outputSchemaFor } from './tools/structured.js';
 import { CACHE_HINTS, SERVER_IDENTITY } from './discovery.js';
@@ -291,13 +292,26 @@ const TOOLS: ToolSpec[] = [
   {
     ...checkTestChangeTool,
     title: 'Check a test fix (heal guard)',
-    // Reads spec files and runs read-only git commands.
+    // Reads spec files and runs read-only git commands; runtime: true also
+    // runs the changed specs (old version from a temporary copy, removed after).
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+    handler: checkTestChangeTool.handler as ToolSpec['handler'],
+  },
+  {
+    ...checkMocksTool,
+    title: 'Check mocks against the live API',
+    // Reads spec files and sends GET requests to the live endpoints they mock.
     annotations: {
       readOnlyHint: true,
       idempotentHint: true,
-      openWorldHint: false,
+      openWorldHint: true,
     },
-    handler: checkTestChangeTool.handler as ToolSpec['handler'],
+    handler: checkMocksTool.handler as ToolSpec['handler'],
   },
   {
     ...quarantineTool,
@@ -355,15 +369,15 @@ export const READ_ONLY_TOOLS: readonly string[] = ['list-tests', 'get-failure', 
 
 /**
  * Named tool sets for PW_MCP_TOOLS / --tools. Every tool definition costs
- * context on each request (all nineteen are ~11.5k tokens), so a client that
+ * context on each request (all twenty are ~11.9k tokens), so a client that
  * only fixes failing suites can load the core loop alone.
  */
 export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {
   all: TOOLS.map((tool) => tool.name),
   core: ['run-test', 'get-run-status', 'get-failure', 'suggest-fix', 'check-test-change', 'diagnose-flaky', 'list-tests'],
-  triage: ['run-test', 'get-run-status', 'get-failure', 'load-report', 'diagnose-flaky', 'quarantine', 'analyze-history', 'audit-tests', 'bisect-failure', 'check-test-change', 'list-tests'],
+  triage: ['run-test', 'get-run-status', 'get-failure', 'load-report', 'diagnose-flaky', 'quarantine', 'analyze-history', 'audit-tests', 'bisect-failure', 'check-test-change', 'check-mocks', 'list-tests'],
   inspect: ['inspect-page', 'validate-selector', 'compare-visual-state', 'audit-accessibility', 'audit-performance', 'save-login'],
-  author: ['list-tests', 'save-login', 'inspect-page', 'validate-selector', 'generate-e2e-test', 'check-test-change', 'run-test'],
+  author: ['list-tests', 'save-login', 'inspect-page', 'validate-selector', 'generate-e2e-test', 'check-test-change', 'check-mocks', 'run-test'],
 };
 
 /** The profile names a client can load later with load-tools (see PW_MCP_TOOLS=auto). */
