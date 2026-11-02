@@ -67,7 +67,7 @@ for (const mode of [{ pin: MODERN_PROTOCOL_VERSION }, 'auto']) {
     try {
       assert.equal(client.getNegotiatedProtocolVersion(), MODERN_PROTOCOL_VERSION);
       const tools = await client.listTools();
-      assert.equal(tools.tools.length, 19);
+      assert.equal(tools.tools.length, 20);
       assert.equal(tools.ttlMs, CACHE_HINTS['tools/list'].ttlMs);
       assert.equal(tools.cacheScope, 'private');
       const prompts = await client.listPrompts();
@@ -85,7 +85,7 @@ test('a 2025 client still gets the initialize handshake', async () => {
   try {
     assert.notEqual(client.getNegotiatedProtocolVersion(), MODERN_PROTOCOL_VERSION);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 19);
+    assert.equal(tools.tools.length, 20);
     assert.equal(tools.ttlMs, undefined, '2025 responses are never given cache fields');
   } finally {
     await close();
@@ -100,7 +100,7 @@ test('the real stdio binary serves both eras on one connection each', async () =
     await client.connect(transport);
     try {
       assert.equal(client.getNegotiatedProtocolVersion() === MODERN_PROTOCOL_VERSION, modern, mode);
-      assert.equal((await client.listTools()).tools.length, 19);
+      assert.equal((await client.listTools()).tools.length, 20);
     } finally {
       await client.close();
     }
@@ -242,7 +242,7 @@ test('a 2026-07-28 client negotiates the stateless revision over the HTTP bridge
   try {
     assert.equal(client.getNegotiatedProtocolVersion(), MODERN_PROTOCOL_VERSION);
     const tools = await client.listTools();
-    assert.equal(tools.tools.length, 19);
+    assert.equal(tools.tools.length, 20);
     assert.equal(tools.ttlMs, CACHE_HINTS['tools/list'].ttlMs);
     const skills = await new SkillsClient(client).list();
     assert.equal(skills.skills.length, 1);

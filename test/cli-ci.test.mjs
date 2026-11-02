@@ -32,7 +32,7 @@ test('resolveToolSelection expands profiles, keeps registry order and reports un
   const mixed = resolveToolSelection('inspect, run-test ,nope');
   assert.deepEqual(mixed.tools, ['run-test', 'inspect-page', 'validate-selector', 'audit-accessibility', 'audit-performance', 'compare-visual-state', 'save-login']);
   assert.deepEqual(mixed.unknown, ['nope']);
-  assert.equal(resolveToolSelection('ALL').tools.length, 19);
+  assert.equal(resolveToolSelection('ALL').tools.length, 20);
   assert.equal(resolveToolSelection('nope').tools, undefined);
 });
 

@@ -10,6 +10,7 @@ import { PlaywrightMcpError } from '../types/index.js';
 import type { LastRunRecord, TestFailure, ToolContext, ToolResponse } from '../types/index.js';
 import { parseReportJson } from '../utils/report-parser.js';
 import { readFailureTrace } from '../utils/trace-reader.js';
+import type { FailureTraceContext } from '../utils/trace-reader.js';
 import {
   codeFence,
   clipLines,
@@ -66,6 +67,30 @@ function nextSteps(failure: TestFailure, index: number): string[] {
   }
   steps.push(`Ask for this failure again with \`index: ${index}\` after re-running to compare.`);
   return steps;
+}
+
+/** The hydration-race and hydration-error notes from a trace, as markdown lines. */
+export function renderHydration(trace: Pick<FailureTraceContext, 'hydrationRace' | 'hydrationErrors'>): string[] {
+  const lines: string[] = [];
+  const race = trace.hydrationRace;
+  if (race) {
+    const target = race.selector ? ` on \`${clipLines(race.selector, 1, 120)}\`` : '';
+    lines.push(
+      '### ⚡ Possible hydration race',
+      '',
+      `The \`${race.action}\`${target} ran while ${race.scriptCount} script(s) of the page were still downloading (the last finished ${race.pendingMs} ms later):`,
+      ...race.scripts.map((url) => `- \`${url}\``),
+      '',
+      'On a server-rendered page (Next.js, Nuxt, Remix, Astro…) the HTML is clickable before its JavaScript attaches the handlers, so the step "passes" and does nothing. Wait for the app to be interactive before acting: an app-side marker such as `html[data-hydrated]` set in a root effect, or `astro-island[ssr]` gone for Astro. `inspect-page` on the URL shows how long the gap is.',
+      '',
+    );
+  }
+  if (trace.hydrationErrors?.length) {
+    lines.push('### ⚡ Hydration errors in the console', '');
+    for (const text of trace.hydrationErrors) lines.push(`- ${clipLines(text, 2, 300)}`);
+    lines.push('', 'The server HTML and the first client render disagreed, so the framework re-rendered or skipped part of the page. Elements can lose handlers or change under the test.', '');
+  }
+  return lines;
 }
 
 async function renderTraceContext(failure: TestFailure): Promise<string> {
@@ -132,6 +157,8 @@ async function renderTraceContext(failure: TestFailure): Promise<string> {
     }
     lines.push('');
   }
+
+  lines.push(...renderHydration(trace));
 
   const html = trace.snippet ?? trace.snapshotHtml;
   if (html) {

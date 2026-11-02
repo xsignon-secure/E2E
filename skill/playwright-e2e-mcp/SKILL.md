@@ -13,7 +13,7 @@ and concrete next steps. It can also propose and apply a verified fix for a brok
 locator, inspect pages behind a login, run long suites in the background and keep
 a local history of every run.
 
-This skill is written for playwright-e2e-mcp 0.11.0 and works with 0.2.0 or
+This skill is written for playwright-e2e-mcp 0.12.0 and works with 0.2.0 or
 newer. If `suggest-fix`, `get-run-status` or `analyze-history` is missing, the
 server is older than 0.2.0: use the steps that do not need those tools and tell
 the user to update it. `diagnose-flaky`'s per-test table and `isolate` option
@@ -30,7 +30,9 @@ pytest-playwright projects (`run-test`, `get-failure`, `list-tests`) arrived in
 in 0.9.0; asking before changing files, the interactive test report (MCP Apps)
 and sign-in with Client ID Metadata Documents arrived in 0.10.0; the compact
 `inspect-page` locator map as the default view and `load-tools` (`--tools=auto`)
-arrived in 0.11.0. If a tool that
+arrived in 0.11.0; `check-mocks`, the hydration notes in `inspect-page`,
+`get-failure` and `diagnose-flaky`, and `check-test-change`'s `runtime` option and
+pytest support arrived in 0.12.0. If a tool that
 writes returns `declined: true`, the user said no: do not retry the write, show
 them the proposed change instead. If `doctor` says a newer version is out, pass its upgrade command on to
 the user.
@@ -42,7 +44,7 @@ the user.
    `validate-selector`, `list-tests`, `generate-e2e-test`,
    `compare-visual-state`, `audit-accessibility`, `audit-performance`,
    `diagnose-flaky`, `analyze-history`, `audit-tests`, `bisect-failure`,
-   `save-login`, `check-test-change` and `quarantine` (your client
+   `save-login`, `check-test-change`, `check-mocks` and `quarantine` (your client
    may prefix them, e.g. `mcp__playwright-e2e__run-test`).
 2. If they are all missing, stop and tell the user the MCP server is not
    connected. Point them to `references/setup.md` for the one-line install for
@@ -101,10 +103,18 @@ Follow these steps in order. Do not edit code before step 3.
      API call before raising any timeout.
    - Failed network request (4xx/5xx/no response) right before the failure: the
      backend is the likely cause; report it.
+   - `⚡ Possible hydration race` or hydration errors: the test clicked before the
+     server-rendered page was interactive. Add the hydration wait the output names
+     (once, in a `beforeEach` or fixture), never a timeout.
+   - The test mocks the API (`route.fulfill`, `routeFromHAR`) and the user suspects
+     the real backend: `check-mocks` with the dev or staging `baseUrl` shows whether
+     the mocks still match it.
 4. **Fix** the spec or the app code, the smallest change that addresses the cause.
    Then call `check-test-change` (0.7.0+; no arguments checks the uncommitted
-   changes). If it says **BLOCK**, the fix made the test pass by checking less
-   (a deleted assertion, a skip, `.only`): undo that part and fix the cause. Treat
+   changes; add `runtime: true` (0.12.0+) when the fix touched control flow). If it
+   says **BLOCK**, the fix made the test pass by checking less (a deleted assertion,
+   a skip, `.only`, an assertion moved under an `if`, fewer assertions running):
+   undo that part and fix the cause. Treat
    **WARN** findings as things to justify to the user, not to wave through.
 5. **Re-run only what failed:** `run-test` with `{ "lastFailed": true }`. Repeat
    from step 2 until green.
@@ -290,7 +300,7 @@ with the commit it tested. `analyze-history` views:
   `selector` for one region) returns the accessibility snapshot and a
   `toMatchAriaSnapshot` assertion to paste into a spec.
 - **Set up CI:** when the user wants the same diagnosis on every pull request,
-  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.11.0`) or the
+  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.12.0`) or the
   `npx -y playwright-e2e-mcp ci` command in `references/setup.md`. It writes the
   run, flaky verdicts and fix diffs to the job summary and one PR comment.
 - **Accessibility:** `audit-accessibility` with `url` runs axe-core against

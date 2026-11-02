@@ -45,6 +45,7 @@ const EXPECTED_TOOLS = [
   'audit-performance',
   'audit-tests',
   'bisect-failure',
+  'check-mocks',
   'check-test-change',
   'compare-visual-state',
   'diagnose-flaky',
@@ -215,6 +216,19 @@ async function startFixtureServer() {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Fixture</title></head><body>${body}</body></html>`);
       };
+      if (req.method === 'GET' && req.url === '/ssr') {
+        // A server-rendered page in the style of Next.js: the button is in
+        // the HTML, its handler arrives with a slow script 1.2 s later.
+        html('<div id="__next"><button id="buy">Add to cart</button><p id="added"></p></div><script>self.__next_f=[]</script><script src="/ssr.js" async></script>');
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/ssr.js') {
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'text/javascript' });
+          res.end("document.getElementById('buy').addEventListener('click',()=>{document.getElementById('added').textContent='Added'});document.getElementById('__next')['__reactContainer$e2e']={};");
+        }, 1200);
+        return;
+      }
       if (req.method === 'GET' && req.url === '/late') {
         html("<h1>Late</h1><script>setTimeout(()=>{const b=document.createElement('button');b.id='late';b.textContent='Ready';document.body.append(b)},1500)</script>");
         return;
@@ -513,6 +527,13 @@ async function phaseLivePage(client, origin) {
   contains('inspect-page with a device preset uses its viewport', phone.text, '412×839');
   const badDevice = await callTool(client, 'inspect-page', { url: origin, device: 'Pixel 99' }, 90_000);
   check('inspect-page names close matches for an unknown device', badDevice.isError && badDevice.text.includes('Close matches: Pixel'), badDevice.text.slice(0, 300));
+
+  const ssr = await callTool(client, 'inspect-page', { url: `${origin}/ssr` }, 90_000);
+  contains('inspect-page names the framework of a server-rendered page', ssr.text, '**Hydration:** ⚡ Next.js, server-rendered');
+  check('inspect-page measures the hydration gap', /controls were on screen \*\*(\d+) ms\*\*/.test(ssr.text) && Number(/\*\*(\d+) ms\*\*/.exec(ssr.text)[1]) >= 800, ssr.text.slice(0, 600));
+  contains('inspect-page says how a test waits for hydration', ssr.text, "html[data-hydrated]");
+  const csr = await callTool(client, 'inspect-page', { url: origin }, 90_000);
+  check('inspect-page adds no hydration line to a plain page', !csr.text.includes('**Hydration:**'), csr.text.slice(0, 300));
 
   const loggedOut = await callTool(client, 'inspect-page', { url: `${origin}/account` }, 90_000);
   contains('inspect-page without a session lands on the login page', loggedOut.text, '"Sign in"');

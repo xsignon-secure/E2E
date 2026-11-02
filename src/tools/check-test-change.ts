@@ -9,11 +9,13 @@
  */
 
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import { PlaywrightMcpError } from '../types/index.js';
-import type { ToolContext, ToolResponse } from '../types/index.js';
+import type { TestAttempt, ToolContext, ToolResponse } from '../types/index.js';
+import { detectProject } from '../utils/project-detector.js';
+import { runTests } from '../utils/playwright-runner.js';
 import { joinProjectPath, relativeToRoot, sanitizeUserPath, toNativePath } from '../utils/path-utils.js';
 import { guardFileChange, guardVerdict, isGuardedFile, renderGuardReport } from '../utils/test-change-guard.js';
 import type { GuardFileResult } from '../utils/test-change-guard.js';
@@ -31,6 +33,10 @@ const checkTestChangeInput = z.object({
   files: z.array(z.string()).max(MAX_FILES).optional().describe('Only these files (default: every changed spec file and playwright config)'),
   file: z.string().optional().describe('With after: the spec file a fix would change'),
   after: z.string().max(MAX_FILE_BYTES).optional().describe("With file: the fix's full new file content, checked before it is written"),
+  runtime: z
+    .boolean()
+    .optional()
+    .describe('Also run each changed TS/JS spec in its old and new version and compare how many assertions actually ran per test (catches early returns and skipped branches the code scan cannot see)'),
   projectRoot: z.string().optional().describe('Project directory (default: server root)'),
 });
 
@@ -56,7 +62,7 @@ async function readIfExists(file: string): Promise<string | undefined> {
 }
 
 /** Compare every changed guarded file in the working tree with `base`. */
-export async function guardAgainstRef(root: string, base: string, only?: string[]): Promise<GuardFileResult[]> {
+export async function guardAgainstRef(root: string, base: string, only?: string[], befores?: Map<string, { top: string; source: string }>): Promise<GuardFileResult[]> {
   let top: string;
   try {
     top = (await git(root, ['rev-parse', '--show-toplevel'])).trim().replace(/\\/g, '/');
@@ -87,8 +93,86 @@ export async function guardAgainstRef(root: string, base: string, only?: string[
     if (before.length > MAX_FILE_BYTES) continue;
     const after = await readIfExists(joinProjectPath(top, file));
     results.push(guardFileChange(file, before, after));
+    if (after !== undefined) befores?.set(file, { top, source: before });
   }
   return results;
+}
+
+/** The old version's temporary copy next to the spec: x.spec.ts → x.pwmcp-base.spec.ts. */
+export function baseCopyName(file: string): string | undefined {
+  const match = /^(.*?)(\.(?:spec|test)\.[cm]?[jt]sx?)$/.exec(file);
+  return match ? `${match[1]}.pwmcp-base${match[2]}` : undefined;
+}
+
+/** Per test, how many assertions ran: before (old copy) and after (working tree). */
+export function compareAssertionRuns(
+  attempts: TestAttempt[],
+  pairs: Array<{ file: string; copy: string }>,
+): Array<{ file: string; title: string; before: number; after: number; beforeStatus: string; afterStatus: string; line?: number }> {
+  const out: Array<{ file: string; title: string; before: number; after: number; beforeStatus: string; afterStatus: string; line?: number }> = [];
+  for (const { file, copy } of pairs) {
+    const after = attempts.filter((a) => a.file === file && a.retry === 0);
+    const before = attempts.filter((a) => a.file === copy && a.retry === 0);
+    for (const now of after) {
+      const old = before.find((a) => a.title === now.title && a.project === now.project);
+      if (!old || old.assertions === undefined || now.assertions === undefined) continue;
+      out.push({ file, title: now.title, line: now.line, before: old.assertions, after: now.assertions, beforeStatus: old.status, afterStatus: now.status });
+    }
+  }
+  return out;
+}
+
+/**
+ * Run the old version of each changed spec (a temporary copy next to it,
+ * removed afterwards) and the new one, and add a block finding for every
+ * test that now runs fewer assertions than before. A test that failed
+ * before stopped at its failure, so running fewer than that is still less.
+ */
+async function runtimeCheck(root: string, results: GuardFileResult[], befores: Map<string, { top: string; source: string }>, ctx: ToolContext): Promise<string> {
+  const pairs: Array<{ file: string; copy: string; absCopy: string; absFile: string }> = [];
+  for (const [file, { top, source }] of befores) {
+    const copy = baseCopyName(file);
+    if (!copy || file.endsWith('.py')) continue;
+    if (pairs.length >= 10) break;
+    const absCopy = joinProjectPath(top, copy);
+    // wx: never overwrite a file that happens to have this name.
+    const written = await writeFile(toNativePath(absCopy), source, { flag: 'wx' }).then(() => true, () => false);
+    if (written) pairs.push({ file, copy, absCopy, absFile: joinProjectPath(top, file) });
+  }
+  if (pairs.length === 0) return '**Runtime check:** no changed TypeScript/JavaScript spec to run.';
+  try {
+    const detection = await detectProject(root);
+    const run = await runTests({
+      projectRoot: root,
+      configPath: detection.configPath ?? undefined,
+      testFiles: pairs.flatMap((p) => [relativeToRoot(root, p.absFile), relativeToRoot(root, p.absCopy)]),
+      collectAttempts: true,
+      retries: 0,
+      retryOnFailure: false,
+      timeoutMs: 600_000,
+      signal: ctx.signal,
+    });
+    const rel = pairs.map((p) => ({ file: relativeToRoot(root, p.absFile), copy: relativeToRoot(root, p.absCopy), top: p.file }));
+    const rows = compareAssertionRuns(run.attempts ?? [], rel);
+    if (rows.length === 0) return `**Runtime check:** the tests ran but no per-test assertion counts came back${run.errorMessage ? ` (${run.errorMessage.split('\n')[0]})` : ''}.`;
+    const lines = ['### Runtime check: assertions that ran', '', '| test | before | after |', '| --- | ---: | ---: |'];
+    for (const row of rows) {
+      lines.push(`| \`${row.file}\` ${row.title} | ${row.before} (${row.beforeStatus}) | ${row.after} (${row.afterStatus}) |`);
+      if (row.after < row.before) {
+        const target = results.find((r) => rel.some((p) => p.top === r.file && p.file === row.file));
+        target?.findings.push({
+          severity: 'block',
+          rule: 'fewer-assertions-ran',
+          test: row.title,
+          line: row.line,
+          message: `At run time the test now executes ${row.after} assertion(s), down from ${row.before}${row.beforeStatus !== 'passed' ? ' (and the old version stopped early at its failure)' : ''}: part of it no longer runs.`,
+        });
+      }
+    }
+    return lines.join('\n');
+  } finally {
+    for (const pair of pairs) await rm(toNativePath(pair.absCopy), { force: true }).catch(() => undefined);
+  }
 }
 
 export const checkTestChangeTool = {
@@ -106,6 +190,7 @@ export const checkTestChangeTool = {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       let results: GuardFileResult[];
       let scope: string;
+      let runtimeNote: string | undefined;
       if (args.after !== undefined || args.file) {
         if (!args.file || args.after === undefined) {
           throw new PlaywrightMcpError('Pass file and after together', 'INVALID_INPUT', {
@@ -119,8 +204,10 @@ export const checkTestChangeTool = {
         scope = 'the file on disk → the proposed version';
       } else {
         const base = assertGitRef(args.base ?? 'HEAD');
-        results = await guardAgainstRef(root, base, args.files);
+        const befores = new Map<string, { top: string; source: string }>();
+        results = await guardAgainstRef(root, base, args.files, befores);
         scope = base === 'HEAD' ? 'last commit → working tree' : `\`${base}\` → working tree`;
+        if (args.runtime) runtimeNote = await runtimeCheck(root, results, befores, ctx);
       }
       const verdict = guardVerdict(results);
       const findings = results.flatMap((r) =>
@@ -136,7 +223,7 @@ export const checkTestChangeTool = {
       const text =
         results.length === 0
           ? '## ✅ OK — no changed spec files\n\nNothing to compare: no spec file or playwright config differs from the base.'
-          : renderGuardReport(results, scope);
+          : renderGuardReport(results, scope) + (runtimeNote ? `\n\n${runtimeNote}` : '');
       return toolText(text, { ok: verdict !== 'BLOCK', status: verdict, findings, total: findings.length });
     }),
 };

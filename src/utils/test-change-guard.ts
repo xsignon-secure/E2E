@@ -290,6 +290,10 @@ export interface TestShape {
   swallowedAssertions: number;
   /** Web-first assertions left without `await`. */
   unawaited: number;
+  /** Assertions that only run when a condition holds (inside an if, after && / ?). */
+  conditional: number;
+  /** `return` statements with an assertion after them in the test. */
+  earlyReturns: number;
   maxTimeout: number;
   strong: number;
   weak: number;
@@ -315,6 +319,55 @@ function maxNumber(text: string, re: RegExp): number {
     if (Number.isFinite(value) && value > max) max = value;
   }
   return max;
+}
+
+/** Regions of masked code that run only when a condition holds: if/else bodies. */
+function conditionalRegions(masked: string): Array<[number, number]> {
+  const regions: Array<[number, number]> = [];
+  const bodyAt = (from: number): [number, number] | undefined => {
+    let k = from;
+    while (k < masked.length && /\s/.test(masked[k])) k += 1;
+    if (masked[k] === '{') {
+      const end = closingBrace(masked, k);
+      return end < 0 ? undefined : [k, end];
+    }
+    const semi = masked.indexOf(';', k);
+    return semi < 0 ? undefined : [k, semi];
+  };
+  for (const match of masked.matchAll(/\bif\s*\(/g)) {
+    const open = match.index! + match[0].length - 1;
+    const close = closingParen(masked, open);
+    if (close < 0) continue;
+    const body = bodyAt(close + 1);
+    if (!body) continue;
+    regions.push(body);
+    const elseMatch = /^\s*else\b(?!\s+if\b)/.exec(masked.slice(body[1] + 1));
+    if (elseMatch) {
+      const other = bodyAt(body[1] + 1 + elseMatch[0].length);
+      if (other) regions.push(other);
+    }
+  }
+  return regions;
+}
+
+/** Count assertions that run only under a condition. */
+export function conditionalAssertions(masked: string): number {
+  const regions = conditionalRegions(masked);
+  let n = 0;
+  for (const match of masked.matchAll(/\bexpect(?:\.soft|\.poll)?\s*\(/g)) {
+    const at = match.index!;
+    if (masked[at - 1] === '.') continue;
+    const before = masked.slice(Math.max(0, at - 40), at).replace(/\s+$/, '');
+    const shortCircuit = /(?:&&|\|\||\?\?|\?|:)\s*(?:await\s*)?$/.test(before) && !/\b(?:case|default)\s*:?\s*$/.test(before);
+    if (shortCircuit || regions.some(([from, to]) => at > from && at < to)) n += 1;
+  }
+  return n;
+}
+
+/** Count `return` statements that have an assertion somewhere after them in the body. */
+export function earlyReturns(masked: string): number {
+  const lastExpect = Math.max(-1, ...[...masked.matchAll(/\bexpect(?:\.soft|\.poll)?\s*\(/g)].map((m) => m.index!));
+  return [...masked.matchAll(/\breturn\b/g)].filter((m) => m.index! < lastExpect).length;
 }
 
 /** Find every test(...) and describe(...) with a string title, and measure each test. */
@@ -367,6 +420,8 @@ export function shapeOf(source: string): FileShape {
       tries: trying.unsafe,
       swallowedAssertions: trying.swallowedAssertions,
       unawaited: unawaitedAssertions(body),
+      conditional: conditionalAssertions(body),
+      earlyReturns: earlyReturns(body),
       maxTimeout: maxNumber(body, /(?:\btimeout\s*:\s*|\bsetTimeout\s*\(\s*)([\d_]+)/g),
       strong: matchers.filter((m) => STRONG.has(m)).length,
       weak: matchers.filter((m) => WEAK.has(m)).length,
@@ -388,7 +443,8 @@ export function shapeOf(source: string): FileShape {
 
 /** Compare two versions of one file. */
 export function guardFileChange(file: string, beforeSource: string, afterSource: string | undefined): GuardFileResult {
-  const before = shapeOf(beforeSource);
+  const measure = file.endsWith('.py') ? pythonShapeOf : shapeOf;
+  const before = measure(beforeSource);
   const findings: GuardFinding[] = [];
   if (afterSource === undefined) {
     if (before.tests.size > 0) {
@@ -400,7 +456,7 @@ export function guardFileChange(file: string, beforeSource: string, afterSource:
     }
     return { file, findings, testsBefore: before.tests.size, testsAfter: 0 };
   }
-  const after = shapeOf(afterSource);
+  const after = measure(afterSource);
 
   const removed = [...before.tests.values()].filter((t) => !after.tests.has(t.key));
   const added = [...after.tests.values()].filter((t) => !before.tests.has(t.key));
@@ -505,6 +561,25 @@ function compareTest(old: TestShape, now: TestShape, findings: GuardFinding[]): 
   } else if (now.swallowed > old.swallowed || now.tries > old.tries) {
     findings.push({ severity: 'warn', rule: 'error-swallowed', ...where, message: 'A `try` without a rethrow, or an empty `.catch()`, was added: a failing step can now pass silently.' });
   }
+  if (now.conditional > old.conditional) {
+    const moved = now.assertions - now.conditional < old.assertions - old.conditional;
+    findings.push({
+      severity: moved ? 'block' : 'warn',
+      rule: 'assertion-made-conditional',
+      ...where,
+      message: moved
+        ? 'An assertion now sits inside an `if` (or after `&&` / `?`): when the condition is false it never runs, so the test passes without checking.'
+        : 'A new assertion runs only under a condition (`if`, `&&`, `?`): check the test still fails when the condition is false.',
+    });
+  }
+  if (now.earlyReturns > old.earlyReturns) {
+    findings.push({
+      severity: 'warn',
+      rule: 'early-return',
+      ...where,
+      message: 'A `return` was added before later assertions: when it is taken, the rest of the test never runs.',
+    });
+  }
   if (now.unawaited > old.unawaited) {
     findings.push({
       severity: 'warn',
@@ -532,7 +607,7 @@ export function guardVerdict(results: GuardFileResult[]): GuardVerdict {
 
 /** Spec files and Playwright configs, the files the guard reads. */
 export function isGuardedFile(file: string): boolean {
-  return /\.(spec|test)\.[cm]?[jt]sx?$/.test(file) || /(^|\/)playwright\.config\.[cm]?[jt]s$/.test(file) || /(^|\/)(e2e|tests?)\/.*\.[cm]?[jt]sx?$/.test(file);
+  return /\.(spec|test)\.[cm]?[jt]sx?$/.test(file) || /(^|\/)(test_[^/]*|[^/]*_test)\.py$/.test(file) || /(^|\/)playwright\.config\.[cm]?[jt]s$/.test(file) || /(^|\/)(e2e|tests?)\/.*\.[cm]?[jt]sx?$/.test(file);
 }
 
 /** Markdown report shared by the tool and the CLI. */
@@ -561,4 +636,167 @@ export function renderGuardReport(results: GuardFileResult[], scope: string): st
       : '**What to do:** each of these can be right, but each can also hide a real failure. Check the reason before merging.',
   );
   return lines.join('\n');
+}
+
+/* ------------------------------------------------------------------ */
+/* pytest-playwright                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Mask Python strings (all quote styles, prefixes included) and # comments. */
+export function maskPython(source: string): string {
+  const out = source.split('');
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k += 1) if (out[k] !== '\n') out[k] = ' ';
+  };
+  let i = 0;
+  while (i < source.length) {
+    const c = source[i];
+    if (c === '#') {
+      const end = source.indexOf('\n', i);
+      const stop = end === -1 ? source.length : end;
+      blank(i, stop);
+      i = stop;
+    } else if (c === '"' || c === "'") {
+      const triple = source.startsWith(c.repeat(3), i);
+      const quote = triple ? c.repeat(3) : c;
+      let j = i + quote.length;
+      while (j < source.length && !source.startsWith(quote, j)) {
+        if (source[j] === '\\') j += 1;
+        else if (!triple && source[j] === '\n') break;
+        j += 1;
+      }
+      blank(i + quote.length, Math.min(j, source.length));
+      i = j + quote.length;
+    } else {
+      i += 1;
+    }
+  }
+  return out.join('');
+}
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+/** The lines of the block that starts at `start` (the `def`/`if` line itself included). */
+function pyBlock(lines: string[], start: number): { end: number; text: string } {
+  const indent = indentOf(lines[start]);
+  let end = start;
+  for (let k = start + 1; k < lines.length; k += 1) {
+    if (lines[k].trim() === '') continue;
+    if (indentOf(lines[k]) <= indent) break;
+    end = k;
+  }
+  return { end, text: lines.slice(start, end + 1).join('\n') };
+}
+
+/** Decorators directly above line `at`. */
+function decoratorsAbove(lines: string[], at: number): string {
+  const out: string[] = [];
+  for (let k = at - 1; k >= 0; k -= 1) {
+    const t = lines[k].trim();
+    if (t.startsWith('@')) out.push(t);
+    else if (t !== '') break;
+  }
+  return out.join('\n');
+}
+
+const PY_ASSERT = /\bexpect\s*\(|^\s*assert\b/gm;
+
+function pyConditionalAssertions(lines: string[]): number {
+  let n = 0;
+  const inside = new Set<number>();
+  lines.forEach((line, k) => {
+    if (/^\s*(if|elif|else)\b.*:\s*$/.test(line)) {
+      const block = pyBlock(lines, k);
+      for (let m = k + 1; m <= block.end; m += 1) inside.add(m);
+    }
+  });
+  lines.forEach((line, k) => {
+    const asserts = (line.match(/\bexpect\s*\(|^\s*assert\b/g) ?? []).length;
+    if (asserts === 0) return;
+    if (inside.has(k) || /\bif\b.*\bexpect\s*\(|\band\s+expect\s*\(|\bexpect\s*\(.*\bif\b.*\belse\b/.test(line)) n += asserts;
+  });
+  return n;
+}
+
+function pyTries(lines: string[]): { unsafe: number; swallowedAssertions: number; passes: number } {
+  let unsafe = 0;
+  let swallowedAssertions = 0;
+  let passes = 0;
+  lines.forEach((line, k) => {
+    if (!/^\s*try\s*:\s*$/.test(line)) return;
+    const tryBlock = pyBlock(lines, k);
+    let next = tryBlock.end + 1;
+    while (next < lines.length && lines[next].trim() === '') next += 1;
+    if (next >= lines.length || !/^\s*except\b/.test(lines[next])) return;
+    const handler = pyBlock(lines, next);
+    const body = handler.text.split('\n').slice(1).join('\n');
+    if (/\braise\b|\bexpect\s*\(|^\s*assert\b|pytest\.fail\s*\(/m.test(body)) return;
+    unsafe += 1;
+    if (/^\s*pass\s*$/m.test(body)) passes += 1;
+    if (/\bexpect\s*\(|^\s*assert\b/m.test(tryBlock.text)) swallowedAssertions += 1;
+  });
+  return { unsafe, swallowedAssertions, passes };
+}
+
+const snakeToCamel = (name: string): string => name.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
+
+/** The pytest version of shapeOf: test functions (and Test classes), with the same measures. */
+export function pythonShapeOf(source: string): FileShape {
+  const masked = maskPython(source);
+  const lines = masked.split('\n');
+  const shapes = new Map<string, TestShape>();
+  let describeSkips = 0;
+  let maxRetries = 0;
+  const classes: Array<{ name: string; indent: number; end: number }> = [];
+  lines.forEach((line, k) => {
+    const cls = /^(\s*)class\s+(\w+)/.exec(line);
+    if (cls) {
+      classes.push({ name: cls[2], indent: cls[1].length, end: pyBlock(lines, k).end });
+      if (/pytest\.mark\.(skip|skipif|xfail)\b/.test(decoratorsAbove(lines, k))) describeSkips += 1;
+    }
+  });
+  if (/^pytestmark\s*=.*pytest\.mark\.(skip|skipif)\b/m.test(masked)) describeSkips += 1;
+  for (const match of masked.matchAll(/\breruns\s*=\s*(\d+)/g)) maxRetries = Math.max(maxRetries, Number(match[1]));
+
+  lines.forEach((line, k) => {
+    const def = /^(\s*)(?:async\s+)?def\s+(test\w*)\s*\(/.exec(line);
+    if (!def) return;
+    const block = pyBlock(lines, k);
+    const bodyLines = lines.slice(k, block.end + 1);
+    const body = block.text;
+    const decorators = decoratorsAbove(lines, k);
+    const owner = classes.filter((c) => c.indent < def[1].length && k > 0 && k <= c.end).map((c) => c.name);
+    let key = [...owner, def[2]].join(' › ');
+    while (shapes.has(key)) key += ' (again)';
+    const modifier = /pytest\.mark\.(skip|skipif)\b/.test(decorators) ? 'skip' : /pytest\.mark\.xfail\b/.test(decorators) ? 'fail' : undefined;
+    for (const rerun of decorators.matchAll(/reruns\s*=\s*(\d+)/g)) maxRetries = Math.max(maxRetries, Number(rerun[1]));
+    const matchers = [...body.matchAll(/\.(to_[a-z_]+|not_to_[a-z_]+)\s*\(/g)].map((m) => snakeToCamel(m[1].replace(/^not_/, '')));
+    const tries = pyTries(bodyLines);
+    const assertLines = [...body.matchAll(PY_ASSERT)].length;
+    const lastAssert = Math.max(-1, ...[...body.matchAll(PY_ASSERT)].map((m) => m.index!));
+    shapes.set(key, {
+      key,
+      title: def[2],
+      line: k + 1,
+      modifier,
+      assertions: assertLines,
+      soft: 0,
+      conditionalSkips: count(body, /\bpytest\.(?:skip|xfail)\s*\(/g),
+      hardWaits: count(body, /\.wait_for_timeout\s*\(|\btime\.sleep\s*\(|\bsleep\s*\(/g),
+      forced: count(body, /\bforce\s*=\s*True\b/g),
+      swallowed: tries.passes,
+      tries: tries.unsafe,
+      swallowedAssertions: tries.swallowedAssertions,
+      unawaited: 0,
+      conditional: pyConditionalAssertions(bodyLines),
+      earlyReturns: [...body.matchAll(/^\s*return\b/gm)].filter((m) => m.index! < lastAssert).length,
+      maxTimeout: maxNumber(body, /\btimeout\s*=\s*([\d_]+)/g),
+      strong: matchers.filter((m) => STRONG.has(m)).length,
+      weak: matchers.filter((m) => WEAK.has(m)).length,
+      body: body.replace(/^\s*(?:async\s+)?def\s+\w+/, '').replace(/\s+/g, ' '),
+    });
+  });
+  return { tests: shapes, only: 0, describeSkips, maxRetries, maxDiffAllowance: 0 };
 }

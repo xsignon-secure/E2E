@@ -22,8 +22,13 @@ export const ATTEMPTS_FILE_ENV = 'PW_MCP_ATTEMPTS_FILE';
 const REPORTER_SOURCE = `'use strict';
 const fs = require('fs');
 class PlaywrightE2eMcpAttempts {
-  constructor() { this.file = process.env.${ATTEMPTS_FILE_ENV}; }
+  constructor() { this.file = process.env.${ATTEMPTS_FILE_ENV}; this.asserts = new WeakMap(); }
   printsToStdio() { return false; }
+  onStepEnd(test, result, step) {
+    // Assertions that actually ran (expect, expect.soft, expect.poll), so a
+    // fix that skips them at run time is visible even when the code looks fine.
+    if (step && step.category === 'expect') this.asserts.set(result, (this.asserts.get(result) || 0) + 1);
+  }
   onTestEnd(test, result) {
     if (!this.file) return;
     let project;
@@ -40,6 +45,7 @@ class PlaywrightE2eMcpAttempts {
       expectedStatus: test.expectedStatus,
       durationMs: result.duration,
       workerIndex: result.workerIndex,
+      assertions: this.asserts.get(result) || 0,
       message: err && err.message ? String(err.message).split('\\n')[0].slice(0, 300) : undefined,
     };
     try { fs.appendFileSync(this.file, JSON.stringify(line) + '\\n'); } catch (e) { /* best effort */ }
@@ -94,6 +100,7 @@ export function parseAttempts(raw: string, root: string): TestAttempt[] {
       expectedStatus: typeof entry.expectedStatus === 'string' ? entry.expectedStatus : undefined,
       durationMs: typeof entry.durationMs === 'number' ? entry.durationMs : 0,
       workerIndex: typeof entry.workerIndex === 'number' ? entry.workerIndex : undefined,
+      ...(typeof entry.assertions === 'number' ? { assertions: entry.assertions } : {}),
       message: message === '' ? undefined : message,
     });
   }

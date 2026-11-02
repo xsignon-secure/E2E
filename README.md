@@ -138,7 +138,7 @@ or go to **Settings → MCP → Add new MCP server** and paste the standard conf
 project only, put it in `.cursor/mcp.json`.
 
 Only fixing failing tests? [Install the core tools only](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==): the seven-tool fix loop
-(`--tools=core`), about 2.3k tokens of tool definitions instead of 11.5k.
+(`--tools=core`), about 2.3k tokens of tool definitions instead of 11.9k.
 
 </details>
 
@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.11.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.11.0/playwright-e2e-mcp-0.11.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.12.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.12.0/playwright-e2e-mcp-0.12.0.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -273,8 +273,11 @@ command for your setup. Upgrade notes for each release are on the
 - **Honest about real bugs.** When the element is really gone, it refuses to patch the test and
   reports an app bug.
 - **Heal guard.** `check-test-change` (and `playwright-e2e-mcp guard` in CI) blocks a "fix" that
-  went green by deleting an assertion, skipping the test, adding `.only` or swallowing the error,
-  and warns on weaker matchers, hard waits, forced clicks and raised timeouts.
+  went green by deleting an assertion, skipping the test, adding `.only`, swallowing the error or
+  moving an assertion under an `if`, and warns on weaker matchers, hard waits, forced clicks,
+  early returns and raised timeouts. `runtime: true` also runs the old and new version and blocks
+  a test that now **executes fewer assertions**, which catches what no code scan can. Works for
+  pytest-playwright files too.
 - **Asks before it writes.** Applying a fix, writing a test, quarantining or replacing a visual
   baseline shows you the exact diff and waits for your yes in clients that support MCP
   questions (`PW_MCP_CONFIRM_WRITES`).
@@ -290,8 +293,21 @@ command for your setup. Upgrade notes for each release are on the
   free, [self-hosted history server](history-server/README.md) (one `docker run`, dashboard included).
 - **`bisect-failure`** finds the first bad commit without touching your checkout.
 - **`audit-tests`** finds flake risks in the test code (hard waits, one-shot assertions, missing
-  `await`s, fragile selectors), ranks them by real flakiness and applies the safe rewrites with a
-  verifying run.
+  `await`s, fragile selectors, clicks right after `goto` on a server-rendered app), ranks them by
+  real flakiness and applies the safe rewrites with a verifying run.
+
+### ⚡ Hydration races and stale mocks
+
+- **The "too fast" click.** On Next.js, Nuxt, Remix, Astro and other server-rendered apps the HTML
+  is clickable before JavaScript attaches its handlers, so a test clicks, the step passes and
+  nothing happens. `inspect-page` names the framework and measures how long controls were on
+  screen before hydration; `get-failure` and `diagnose-flaky` flag a click made while the page's
+  scripts were still downloading and hydration errors in the console; each comes with the wait
+  to add.
+- **Mocks that drifted from the API.** `check-mocks` (and `playwright-e2e-mcp mocks` in CI) finds
+  every `route.fulfill` JSON body and `routeFromHAR` recording, calls the real endpoint (GET only)
+  and reports the fields the mock relies on that the API no longer sends, changed types, new
+  nulls and removed endpoints, so a green suite stops hiding a broken contract.
 
 ### 🤖 CI that comments with working fixes
 
@@ -315,7 +331,7 @@ command for your setup. Upgrade notes for each release are on the
 ### 🚀 Built for agents in 2026
 
 - **Lean on context.** Start with `--tools=auto` (about 2.4k tokens of tool definitions instead of
-  11.5k) and the agent loads the page, audit or history tools when it needs them, or pick a
+  11.9k) and the agent loads the page, audit or history tools when it needs them, or pick a
   profile: `core`, `triage`, `inspect`, `author`.
 - **Interactive test report** in MCP Apps clients (Claude, ChatGPT, Cursor): filter failures, see
   expected vs. received, re-run or "Ask to fix" in one click.
@@ -334,14 +350,15 @@ command for your setup. Upgrade notes for each release are on the
 | `get-failure` | Deep analysis of one failure: stack, expected/actual, **DOM snapshot at failure (from the trace)**, failed requests, console errors, next steps |
 | `load-report` | Load a run from CI (JSON report or sharded blob reports), map its paths onto the checkout and find the traces, so every other tool works on it |
 | `suggest-fix` | Patch a failure with a locator **proven unique** on the DOM at failure or the new expected text; `apply: true` writes it, re-runs and reverts if still red |
-| `check-test-change` | **Heal guard**: BLOCK deleted assertions, skipped or removed tests and `.only`; WARN on weaker matchers, hard waits, `force: true`, swallowed errors |
+| `check-test-change` | **Heal guard**: BLOCK deleted assertions, skipped or removed tests, `.only` and assertions moved under an `if`; WARN on weaker matchers, hard waits, `force: true`, swallowed errors, early returns. `runtime: true` compares the assertions that actually ran. TS/JS and pytest |
+| `check-mocks` | **Mock drift**: compare every `route.fulfill` JSON mock and HAR recording with the live API (GET only) and report missing fields, changed types, new nulls and removed endpoints |
 | `diagnose-flaky` | Run a test 2–10 times **with retries off** and return `CONSISTENTLY FAILING`, `FLAKY` or `NOT REPRODUCING`; tells parallelism and **test-order** bugs from races |
 | `quarantine` | Quarantine a flaky test with an owner, a reason and an expiry (default 14 days); it keeps running but stops failing `run-test` and `ci` |
 | `analyze-history` | Rank flaky, regressed, broken and slow tests, group failures by cause, show stability by day and **the commit where each test went bad** |
 | `bisect-failure` | **Find the commit that broke a test**: binary-search git history in a temporary worktree (your checkout is untouched) |
 | `audit-tests` | Audit the **test code** for flake risks, ranked by real flakiness; `fix: true` rewrites the mechanical ones and verifies with a re-run |
 | `list-tests` | List tests (`file`, `line`, full title, projects) with filtering |
-| `inspect-page` | Open a URL (optionally signed in, after steps) and return **verified locators**, the full element inventory, or the **ARIA snapshot with a ready assertion** |
+| `inspect-page` | Open a URL (optionally signed in, after steps) and return **verified locators**, the full element inventory, or the **ARIA snapshot with a ready assertion**; reports the framework and the **hydration gap** on server-rendered pages |
 | `validate-selector` | Check a CSS selector, Playwright selector or **locator expression** on a live page: match count and a sturdier verified locator for each match |
 | `generate-e2e-test` | Scaffold a test with the project's **real** selectors, or **walk a flow** on the live page and write a spec that is run once to prove it passes |
 | `save-login` | **Log in once and save the session** with `{{env:E2E_PASSWORD}}` and `{{totp}}` (2FA codes); reused until it expires; secrets never pass through the chat |
@@ -392,7 +409,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.11.0
+  - uses: xsignon-secure/E2E@v0.12.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -407,6 +424,9 @@ steps:
   failures don't fail it.
 - **Heal guard without the Action:** `npx -y playwright-e2e-mcp guard --base origin/main`
   (exit 1 on BLOCK; `--strict` fails on warnings too).
+- **Mock drift check:** `npx -y playwright-e2e-mcp mocks --base-url https://staging.example.com`
+  against a preview or staging deploy (exit 1 on drift; `--map` gives wildcard routes a real URL,
+  `--header "Authorization: Bearer $TOKEN"` signs the calls).
 - **Team history across machines:** run the free [history server](history-server/README.md) and
   give the Action `history-url` and `history-token`; every CI run lands in one history that
   `analyze-history` on your laptop and the server's dashboard both read.
@@ -431,10 +451,12 @@ When the project has no Node Playwright but has pytest settings (`pytest.ini`, `
   pytest-playwright keeps (`--tracing retain-on-failure` is added for you), the failed action,
   the DOM at failure, network and console.
 - **`list-tests`**, **`analyze-history`**, **`quarantine`** and the **`ci`** command work as for Node.
+- **`check-test-change`** (the heal guard) reads `test_*.py` files: deleted `assert`s and
+  `expect`s, `@pytest.mark.skip` / `xfail`, `try: … except: pass` around an assertion, weaker
+  matchers, `wait_for_timeout`, `force=True`. **`check-mocks`** reads `route.fulfill(json=…)`.
 - Not yet for Python: **`suggest-fix`** points at the DOM at failure but does not patch `.py`
-  files, **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`**,
-  **`check-test-change`** and **`generate-e2e-test`** read and write TypeScript/JavaScript specs
-  only. The page tools launch the browser with Node Playwright, so they need `@playwright/test`
+  files, **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`** and
+  **`generate-e2e-test`** read and write TypeScript/JavaScript specs only. The page tools launch the browser with Node Playwright, so they need `@playwright/test`
   installed in the project.
 
 Results come from a small pytest plugin the server loads with `-p` from its temp folder; nothing
@@ -451,7 +473,7 @@ pip install pytest-playwright && playwright install chromium
 
 **Pick your tools.** `--tools=` (or `PW_MCP_TOOLS`) takes profiles and tool names:
 `auto` (core loop plus `load-tools`, about 2.4k tokens), `core` (the seven-tool fix loop, about
-2.3k), `triage`, `inspect`, `author`, or all nineteen (about 11.5k, the default).
+2.3k), `triage`, `inspect`, `author`, or all twenty (about 11.9k, the default).
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -459,7 +481,7 @@ pip install pytest-playwright && playwright install chromium
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `PW_MCP_PROJECT_ROOT` | server cwd | Default project root for every tool |
-| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard). `auto` starts with the core loop (or the tools listed with it, e.g. `auto,inspect`) plus a `load-tools` tool the agent calls to turn on more tools for the session; the client is told the tool list changed. `auto` needs a client that refreshes its tool list (Claude Code, Cursor, VS Code); over the hosted HTTP endpoint it lists every tool. All nineteen tool definitions cost the model about 11.5k tokens per request and `core` about 2.3k (the full `tools/list`, with output schemas most clients do not show the model, is about 16k and 4.8k) |
+| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, mock check, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard, mock check). `auto` starts with the core loop (or the tools listed with it, e.g. `auto,inspect`) plus a `load-tools` tool the agent calls to turn on more tools for the session; the client is told the tool list changed. `auto` needs a client that refreshes its tool list (Claude Code, Cursor, VS Code); over the hosted HTTP endpoint it lists every tool. All twenty tool definitions cost the model about 11.9k tokens per request and `core` about 2.3k (the full `tools/list`, with output schemas most clients do not show the model, is about 16.6k and 4.9k) |
 | `PW_MCP_OUTPUT_SCHEMAS` | on | `0` leaves the output schemas out of the tool list to save context. Results still carry `structuredContent` (see [Structured results](docs/tools.md#structured-results)) |
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
 | `PW_MCP_NO_UPDATE_CHECK` | off | `1` stops `doctor` from asking npm whether a newer version is out (same as `doctor --offline`) |
@@ -514,7 +536,7 @@ re-run). Latest result ([full output](bench/RESULTS.md)):
 | Playwright MCP `browser_navigate` + `browser_snapshot` | 2,286 |
 
 Tokens are characters ÷ 4 and count what the model reads (each tool's name, description and input
-schema). Tool definitions are sent with every request, so with all 19 tools loaded they outweigh
+schema). Tool definitions are sent with every request, so with all 20 tools loaded they outweigh
 the saving on the work itself: use `--tools=core` when you only fix failing tests, or
 `--tools=auto` to start at 2,427 tokens and load more on request. The Playwright MCP route is a
 lower bound: it assumes the agent picks the right locator from the snapshot on the first try,
@@ -552,6 +574,8 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.12:** hydration-race detection, `check-mocks` for mocks that drifted from the API, heal
+  guard that checks at run time and reads pytest files.
 - **0.11:** compact `inspect-page` (571 tokens instead of 3,600), `--tools=auto` to load tools on
   request, smaller tool definitions.
 - **0.10:** asks before changing your files, interactive test report in MCP Apps clients, Client

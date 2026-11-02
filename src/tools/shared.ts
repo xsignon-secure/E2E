@@ -796,6 +796,63 @@ export interface NetworkProfile {
   uploadBps: number;
 }
 
+export interface HydrationScan {
+  framework: string;
+  /** The HTML came from the server (or a static build) before scripts ran. */
+  ssr: boolean;
+  /** 'unknown': the framework gives no public sign of hydration. */
+  state: 'hydrated' | 'pending' | 'unknown' | 'none';
+  /** ms after navigation start when the first control was in the DOM. */
+  firstControlMs: number | null;
+  /** ms after navigation start when the framework had hydrated. */
+  hydratedMs: number | null;
+  /** Astro: islands still waiting to hydrate. */
+  islands?: number;
+}
+
+/**
+ * The hydration line for inspect-page: how long server HTML was clickable
+ * before the framework attached handlers, and how a test should wait.
+ */
+export function describeHydration(h: HydrationScan | undefined): string[] {
+  if (!h || !h.framework) return [];
+  const gap = h.ssr && h.firstControlMs !== null && h.hydratedMs !== null ? Math.max(0, h.hydratedMs - h.firstControlMs) : undefined;
+  const wait = hydrationWait(h.framework);
+  if (h.state === 'pending') {
+    return [
+      `**Hydration:** ${h.framework}, server-rendered, **not hydrated** after ${h.firstControlMs !== null ? 'the controls appeared and ' : ''}5 s. Clicks on this page do nothing until it is; check the console for a script error.`,
+      `> Wait in tests: ${wait}`,
+    ];
+  }
+  if (h.state === 'unknown') {
+    return [`**Hydration:** ${h.framework}${h.ssr ? ', server-rendered' : ''}; it gives no public sign of hydration, so the gap was not measured.`, `> Wait in tests: ${wait}`];
+  }
+  if (!h.ssr) return [`**Hydration:** ${h.framework}, rendered in the browser (no hydration gap).`];
+  if (gap === undefined) return [`**Hydration:** ${h.framework}, server-rendered, hydrated.`];
+  if (gap < 100) return [`**Hydration:** ${h.framework}, server-rendered, hydrated ${gap} ms after the controls appeared (no real gap).`];
+  return [
+    `**Hydration:** ⚡ ${h.framework}, server-rendered: controls were on screen **${gap} ms** before they were hydrated. A test that clicks in that window passes the step and nothing happens.`,
+    `> Wait in tests: ${wait}`,
+  ];
+}
+
+/** How a test waits until the framework has hydrated. */
+export function hydrationWait(framework: string): string {
+  if (framework === 'Astro') return "`await expect(page.locator('astro-island[ssr]')).toHaveCount(0)` after goto.";
+  const effect =
+    framework === 'Nuxt' || framework === 'Vue'
+      ? '`onMounted(() => document.documentElement.dataset.hydrated = \'true\')` in the root component'
+      : framework === 'SvelteKit'
+        ? '`onMount(() => document.documentElement.dataset.hydrated = \'true\')` in the root layout'
+        : framework === 'Angular'
+          ? "`afterNextRender(() => document.documentElement.dataset.hydrated = 'true')` in the root component"
+          : framework === 'Qwik'
+            ? 'nothing: Qwik resumes on interaction instead of hydrating, so there is no gap to wait for'
+            : '`useEffect(() => { document.documentElement.dataset.hydrated = \'true\' }, [])` in the root layout';
+  if (framework === 'Qwik') return effect + '.';
+  return `mark the app ready with ${effect}, then start each test with \`await expect(page.locator('html[data-hydrated]')).toBeAttached()\` (a fixture or beforeEach keeps it in one place).`;
+}
+
 export interface BrowserScriptData {
   title?: string;
   finalUrl?: string;
@@ -824,6 +881,8 @@ export interface BrowserScriptData {
   ariaTruncated?: boolean;
   /** Requests each network mock in `routes` handled, by index. */
   routeHits?: number[];
+  /** mode 'inspect': the framework that rendered the page and when it hydrated. */
+  hydration?: HydrationScan;
   /** HTTP status of the page's main document, when it was fetched over the network. */
   httpStatus?: number;
   /** mode 'login': the session check and what the session holds. */

@@ -2,7 +2,7 @@
 
 [← README](../README.md) · [Hosted endpoint](hosted-endpoint.md) · [Development](development.md)
 
-Every argument of the nineteen tools, with example output. The short list is in the
+Every argument of the twenty tools, with example output. The short list is in the
 [README](../README.md#tools).
 
 ## Structured results
@@ -147,7 +147,9 @@ diagnosis, the test's console output, **the DOM snapshot from the Playwright tra
 (plus the failed action, its selector, and the action log leading up to it)**,
 **the network requests that failed** (4xx/5xx, dead endpoints, no-response — with
 method, URL, status and resource type), **the console errors/warnings the page
-logged before the failure**, and
+logged before the failure**, a **possible hydration race** (a click or fill that ran
+while the page's scripts were still downloading, before the step that failed) and
+**hydration errors** from the console, and
 numbered next steps (re-run this single test by `file:line`, headed/debug mode,
 `validate-selector` when the message mentions a locator, …).
 
@@ -175,6 +177,20 @@ captured, errors first. A locator map looks like:
 1. `getByRole('button', { name: 'Proceed to checkout' })` — button "Proceed to checkout" · also `getByTestId('checkout-btn')`
 2. `getByLabel('Search')` — searchbox "Search"
 ```
+
+On a server-rendered page the result also has a **Hydration** line: the framework (Next.js,
+Nuxt, Remix, React Router, Gatsby, Astro, SvelteKit, Angular, Vue), whether the HTML came from
+the server, and how long controls were on screen before the framework hydrated them, with the
+wait a test should add:
+
+```markdown
+**Hydration:** ⚡ Next.js, server-rendered: controls were on screen **1180 ms** before they were hydrated. A test that clicks in that window passes the step and nothing happens.
+> Wait in tests: mark the app ready with `useEffect(() => { document.documentElement.dataset.hydrated = 'true' }, [])` in the root layout, then start each test with `await expect(page.locator('html[data-hydrated]')).toBeAttached()`.
+```
+
+A page that has not hydrated after 5 s is reported as such (usually a script error, see the
+console). SvelteKit, Angular and Qwik give no public sign of hydration, so the gap is not
+measured for them. The structured result carries it as `hydration`.
 
 `view: "aria"` returns the page's structure as Playwright sees it, and the assertion that
 locks it in a test:
@@ -511,7 +527,7 @@ makes tests pass or fail on timing:
 | `non-retrying-assertion`: `expect(await x.isVisible()).toBe(true)`, `expect(await x.textContent()).toBe(…)`, `count()`, `inputValue()`, `getAttribute()`, `page.title()`, `page.url()` | high | yes: `await expect(x).toBeVisible()`, `toHaveText`, `toHaveCount`, `toHaveValue`, `toHaveAttribute`, `toHaveTitle`, `toHaveURL` |
 | `missing-await` on a web-first assertion, `expect.poll` or a page action | high | yes: adds the `await` |
 | `focused-test` (`.only`) | high | yes: removes `.only` |
-| `force-action`, `networkidle`, `element-handle` (`page.$`, `waitForSelector`), `fragile-selector` (XPath, `nth-child`, hashed class names, long CSS chains), `no-timeout` (`timeout: 0`) | medium | no |
+| `force-action`, `networkidle`, `act-before-hydration` (a click or fill right after `goto` with no wait in between, only when the project depends on Next.js, Nuxt, Remix, React Router, Astro, SvelteKit, Gatsby, Angular SSR or SolidStart), `element-handle` (`page.$`, `waitForSelector`), `fragile-selector` (XPath, `nth-child`, hashed class names, long CSS chains), `no-timeout` (`timeout: 0`) | medium | no |
 | `hardcoded-url` (`goto('http://localhost…')`), `serial-mode` | low | no |
 
 Files are ranked by their findings weighted by the run history: a file whose tests flipped
@@ -597,6 +613,7 @@ session file that is not git-ignored. Not available on the HTTP bridge without a
 | `base` | string | Git ref to compare with: `HEAD` (default: the uncommitted changes) or e.g. `origin/main` (the whole branch) |
 | `files` | string[] | Only these files (default: every changed spec file and Playwright config) |
 | `file` + `after` | string | Check one proposed change before it is written: the spec file and the fix's full new content |
+| `runtime` | boolean | Also run each changed TS/JS spec in its old version (a temporary `*.pwmcp-base.spec.ts` copy next to it, removed afterwards) and its new one, and compare how many assertions ran per test |
 
 The **heal guard**. An AI fix can make a red test green by checking less: deleting the
 assertion that failed, skipping the test, or swapping `toHaveText('Paid')` for
@@ -605,14 +622,65 @@ describe path and title, so a renamed test is compared, not reported as removed)
 
 | Verdict | Rules |
 | --- | --- |
-| **BLOCK** | `assertions-removed` (a test has fewer `expect`s), `test-removed`, `skip-added` (`test.skip`, `fixme`, `fail`, a conditional skip, `describe.skip`), `only-added`, `file-deleted`, `assertion-swallowed` (an `expect` wrapped in `try` whose `catch` neither rethrows nor asserts) |
-| **WARN** | `assertion-softened` (`expect.soft`), `weaker-matcher` (e.g. `toHaveText` → `toBeVisible`, `toEqual` → `toBeTruthy`), `hard-wait-added`, `force-added`, `error-swallowed` (`.catch(() => {})`, a `catch` without a rethrow), `assertion-not-awaited` (a web-first assertion such as `toBeVisible` without `await`), `timeout-raised` (above 2× and 30 s), `retries-raised`, `screenshot-tolerance-raised` |
+| **BLOCK** | `assertions-removed` (a test has fewer `expect`s), `test-removed`, `skip-added` (`test.skip`, `fixme`, `fail`, a conditional skip, `describe.skip`), `only-added`, `file-deleted`, `assertion-swallowed` (an `expect` wrapped in `try` whose `catch` neither rethrows nor asserts), `assertion-made-conditional` (an assertion that always ran now sits inside an `if`, or after `&&` / `?`), `fewer-assertions-ran` (with `runtime: true`: the new version executes fewer assertions than the old one did) |
+| **WARN** | `assertion-softened` (`expect.soft`), `weaker-matcher` (e.g. `toHaveText` → `toBeVisible`, `toEqual` → `toBeTruthy`), `hard-wait-added`, `force-added`, `error-swallowed` (`.catch(() => {})`, a `catch` without a rethrow), `assertion-not-awaited` (a web-first assertion such as `toBeVisible` without `await`), `early-return` (a `return` added before later assertions), a new assertion that only runs under a condition, `timeout-raised` (above 2× and 30 s), `retries-raised`, `screenshot-tolerance-raised` |
+
+**pytest-playwright** files (`test_*.py`, `*_test.py`) get the same rules: `assert` and
+`expect(...)` count as assertions, `@pytest.mark.skip` / `skipif` / `xfail` and
+`pytest.skip()` as skips, `try: … except: pass` around an assertion as swallowed, snake_case
+matchers (`to_have_text` → `to_be_attached` is weaker), `wait_for_timeout` / `time.sleep`,
+`force=True`, `timeout=` and `reruns=`. Tests in `class Test…` are matched as `TestClass › test_name`.
+
+The runtime check catches what a code scan cannot: an early return taken at run time, a branch
+that is never entered, a helper that stopped asserting. A test that failed before stopped at
+its failure, so running fewer assertions than that is still flagged.
 
 Strings and comments are masked before the scan, so `"expect("` in a string does not
 count. The structured result is `{ ok, status: 'OK' | 'WARN' | 'BLOCK', findings[] }`;
 `ok` is `false` only on BLOCK. Run it after `suggest-fix` or any agent edit, before
 committing; in CI use `playwright-e2e-mcp guard --base origin/main` (exit 1 on BLOCK) or
 the Action's `guard: true` input.
+
+## `check-mocks`
+
+| Argument | Type | Description |
+| --- | --- | --- |
+| `baseUrl` | string | Live server for relative mock URLs (a dev server, preview or staging deploy). Default: `use.baseURL` from the Playwright config |
+| `urls` | object | Real URLs for wildcard or regex mocks: `{ "**/api/items/*": "/api/items/1" }` |
+| `headers` | object | Headers for the live calls; `{{env:E2E_API_TOKEN}}` reads an `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` or `LOGIN_*` variable (or one listed in `PW_MCP_LOGIN_ENV`), so tokens never pass through the chat |
+| `filter` | string | Only test files whose path contains this text |
+| `projectRoot` | string | Project directory |
+| `timeoutMs` | number | Limit per live call, default `10000` |
+
+Network mocks keep tests fast and stable, but they are frozen copies of the API: when the
+backend renames a field, the tests stay green and production breaks. `check-mocks` finds
+every mock in the test files (TypeScript, JavaScript and pytest-playwright):
+
+- `page.route(…, route => route.fulfill({ json: … }))`, `body: JSON.stringify(…)` and
+  `path: 'fixtures/cart.json'`, with the handler inline or a named function in the same file
+  (Python: `route.fulfill(json=…)` and `body=json.dumps(…)`);
+- `routeFromHAR('fixtures/api.har')` / `route_from_har(…)`: each GET entry with a JSON response.
+
+It then GETs each mocked endpoint on the live server and compares the JSON **shapes** (field
+names and types, array items merged; values are not compared):
+
+| Severity | Rules |
+| --- | --- |
+| ❌ high | `missing-field` (the mock has a field the API no longer sends), `type-changed` (number → string, object → array…), `endpoint-gone` (404/410), `not-json` |
+| ⚠️ medium | `now-null` (the API sends null where the mock has a value), `status-changed` (401/403…), `server-error` (5xx or no answer) |
+| ℹ️ low | `new-field` (the API sends fields the mock lacks; not drift, listed so the mock can be updated) |
+
+Mocks of writes (a handler that checks `method() === 'POST'`), mocks that return an error on
+purpose, bodies built at run time and routes with wildcards or regexes without an entry in
+`urls` are listed as skipped, with the reason. Only GET requests are sent, redirects are
+followed and checked against the URL policy (`PW_MCP_BLOCK_PRIVATE_URLS`), and at most 40
+endpoints are called per check. The structured result is `{ ok, status: 'OK' | 'DRIFT' |
+'NOTHING CHECKED', findings[] }`.
+
+In CI, run it against the preview or staging deploy:
+`npx -y playwright-e2e-mcp mocks --base-url https://staging.example.com` (exit 1 on drift,
+`--map pattern=url` and `--header "Authorization: Bearer $TOKEN"` repeatable, `--json` for
+machine output).
 
 ## `quarantine`
 

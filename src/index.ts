@@ -59,6 +59,15 @@ async function main(): Promise<void> {
     process.exitCode = await runGuard(process.argv.slice(3));
     return;
   }
+  if (process.argv[2] === 'mocks') {
+    const { runMocks, MOCKS_USAGE } = await import('./cli/mocks.js');
+    if (process.argv.includes('--help') || process.argv.includes('-h')) {
+      process.stdout.write(MOCKS_USAGE);
+      return;
+    }
+    process.exitCode = await runMocks(process.argv.slice(3));
+    return;
+  }
   if (process.argv[2] === 'upload') {
     const { runUpload, UPLOAD_USAGE } = await import('./cli/upload.js');
     if (process.argv.includes('--help') || process.argv.includes('-h')) {
@@ -82,6 +91,7 @@ async function main(): Promise<void> {
         '       playwright-e2e-mcp init [options] add the server + agent skill to a project (init --help)',
         '       playwright-e2e-mcp doctor         check Node, Playwright, browsers, setup and updates (doctor --help)',
         '       playwright-e2e-mcp guard [options] fail CI when changed tests check less (guard --help)',
+        '       playwright-e2e-mcp mocks [options] fail CI when network mocks drifted from the live API (mocks --help)',
         '       playwright-e2e-mcp upload [options] send recorded runs to your team history server (opt-in; upload --help)',
         '',
         'Connects over stdio (MCP). Configuration via environment:',
