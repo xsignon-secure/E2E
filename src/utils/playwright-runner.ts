@@ -49,6 +49,9 @@ import {
 import { logger } from './logger.js';
 import { detectPytestProject, runPytest } from './pytest-runner.js';
 import { ATTEMPTS_FILE_ENV, attemptsReporterPath, parseAttempts } from './attempts-reporter.js';
+
+/** A git ref for --only-changed: never an option, no spaces or control characters. */
+const CHANGED_REF_RE = /^[A-Za-z0-9._/~^@{}][A-Za-z0-9._/~^@{}-]*$/;
 import { LIVE_RESULTS_FILE_ENV, liveReporterPath, liveResultsToReport } from './live-reporter.js';
 
 const DEFAULT_RUN_TIMEOUT_MS = 120_000;
@@ -587,6 +590,11 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
   }
   if (options.grep) args.push(`--grep=${sanitizeGrep(options.grep)}`);
   if (options.lastFailed) args.push('--last-failed');
+  if (options.changed !== undefined && options.changed !== false) {
+    if (options.changed === true) args.push('--only-changed');
+    else if (CHANGED_REF_RE.test(options.changed) && options.changed.length <= 200) args.push(`--only-changed=${options.changed}`);
+    else throw new PlaywrightMcpError(`changed must be true or a git ref, not "${options.changed}"`, 'INVALID_INPUT', { hint: "E.g. true (uncommitted changes), 'origin/main' or 'HEAD~3'." });
+  }
   if (options.project !== undefined) {
     if (!/^[^-\x00-\x1f\x7f][^\x00-\x1f\x7f]{0,99}$/.test(options.project)) {
       throw new PlaywrightMcpError(`Invalid project name "${options.project}"`, 'INVALID_PATH');
@@ -747,6 +755,7 @@ export async function runTests(options: RunTestOptions): Promise<RunTestResult> 
     command: displayCommand,
     autoRetry: autoRetryState.apply,
     lastFailed: options.lastFailed === true,
+    ...(options.changed !== undefined && options.changed !== false ? { changed: options.changed === true ? 'HEAD' : options.changed } : {}),
     errorKind,
     errorMessage,
     hint,

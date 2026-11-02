@@ -604,6 +604,11 @@ export async function runPytest(options: RunTestOptions): Promise<RunTestResult>
     args.push('-k', options.grep);
   }
   if (options.lastFailed) args.push('--last-failed');
+  if (options.changed !== undefined && options.changed !== false) {
+    throw new PlaywrightMcpError('changed is not available for pytest projects', 'INVALID_INPUT', {
+      hint: 'pytest has no import-aware --only-changed. Pass the test files you changed, or use lastFailed: true.',
+    });
+  }
   const retries = options.retries ?? 0;
   if (retries > 0) args.push(`--reruns=${Math.min(retries, 10)}`);
   args.push(...checkedArgs(options.extraArgs));

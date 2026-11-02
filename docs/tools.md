@@ -58,6 +58,8 @@ out; results still carry the same fields.
 | `routes` | array | Up to 20 network mocks applied before the page loads, first match wins: `{ "url": "**/api/cart", "method"?, "status"?, "json"? \| "body"?, "contentType"?, "headers"?, "abort"?, "delayMs"? }`. `json`, `body` or `status` fulfils the request, `abort: true` fails it, and `delayMs` alone slows the real request |
 | `viewport` | object | `{ "width": 390, "height": 844 }` (default 1280×720) |
 | `blockWrites` | boolean | Abort every POST, PUT, PATCH and DELETE that no `routes` mock or HAR answers, so steps against a real environment cannot place an order or delete data. The result lists the blocked requests. `PW_MCP_BLOCK_WRITES=1` turns it on by default |
+| `blockResources` | array | Skip requests for speed and privacy: any of `image`, `media`, `font`, `stylesheet`, `trackers` (common analytics, tag and ad hosts such as Google Analytics, Tag Manager, Hotjar, Segment). `routes` mocks and a HAR still answer first. The result counts the skipped requests. `PW_MCP_BLOCK_RESOURCES=image,font,trackers` sets a default |
+| `offline` | boolean | Go offline once the page has loaded, before `actions` run, to check offline banners, retry buttons and cached views |
 | `har` | object | `{ "path": "tests/fixtures/cart.har", "mode"?: "replay" \| "record", "url"?: "**/api/**", "notFound"?: "abort" \| "fallback" }`. `replay` (default) answers matching requests from the file, `record` saves the page's traffic to it. The file and its folder must be inside the project. `routes` mocks still win over the HAR |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Browser engine (default `chromium`; the engine must be installed with `npx playwright install`). `audit-performance` is Chromium-only, and WebKit is refused while private addresses are blocked |
 | `device` | string | A Playwright device preset such as `iPhone 15`, `Pixel 7` or `iPad Pro 11`: its viewport, user agent, pixel ratio and touch. The engine stays `browser`'s (Firefox has no mobile emulation); `viewport` still overrides the size. An unknown name lists close matches |
@@ -110,6 +112,7 @@ In a Python project (pytest-playwright, no Node Playwright) the same arguments r
 | `config` | string | `playwright.config` path **or 1-based index** when the project has several |
 | `retryOnFailure` | boolean | Auto-retry failures **once** before reporting them (default `true`; ignored when `retries` is set) |
 | `lastFailed` | boolean | Only re-run tests that failed in the previous run (Playwright `--last-failed`) — the fast fix → re-run loop |
+| `changed` | boolean \| string | Only test files affected by changes (Playwright `--only-changed`, which follows imports): `true` for uncommitted changes, or a git ref such as `origin/main` or `HEAD~3`. Not for pytest projects |
 | `args` | string[] | Extra Playwright flags from an allowlist (`--repeat-each=N`, `--max-failures=N`, `--update-snapshots`, `--shard=1/3`, `--trace=on`, …); values go after `=` and are checked, and flags that take a path, such as `--config` or `--output`, are rejected |
 | `background` | boolean | Return a run id at once; poll `get-run-status` for progress and the result |
 
@@ -301,6 +304,7 @@ verified locators from the live page that best match the description.
 | `action` | `compare` \| `baseline` | `compare` (default) diffs; `baseline` re-captures the reference |
 | `selector` | string | Capture just this element |
 | `fullPage` | boolean | Capture the full scrollable page |
+| `mask` | string[] | Up to 20 selectors or locators painted one flat color in both images, so a clock, an ad slot or a random avatar never counts as a change, e.g. `["#clock", "getByTestId('ad')"]`. Saved with the baseline and reused by later compares; passing different masks warns |
 | `tolerance` | number | Percent of pixels that may differ (default `0.1`) |
 | `pixelThreshold` | number | Per-pixel channel delta considered different (default `60`) |
 | `waitUntil` / `waitFor` / `timeoutMs` | — | As with `inspect-page` |
@@ -446,6 +450,7 @@ numbers from one headless Chromium; field data (CrUX, RUM) can differ.
 | `index` | number | 1-based failure index from the last run (default `1`) |
 | `apply` | boolean | Write the fix into the spec (default `false`: return the diff only) |
 | `verify` | boolean | After applying, re-run the test and revert the file if it still fails (default `true`) |
+| `verifyAllProjects` | boolean | Re-run on every project in `playwright.config` (e.g. chromium, firefox and webkit), not just the one that failed, and revert unless all pass, so a fix that only works in one browser is never kept. Not for pytest projects |
 | `allowExpectationUpdate` | boolean | Allow applying a changed expected text/value (default `false`, since it can hide a real regression) |
 | `candidate` | number | For a strict mode violation, which of the listed matches the test meant (1-based) |
 | `url` | string | Heal against this live page instead of the DOM snapshot in the failure trace |

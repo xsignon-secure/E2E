@@ -72,6 +72,10 @@ const suggestFixInput = z.object({
     .optional()
     .describe('Strict mode violation: which of the listed matches the test meant (1-based)'),
   verify: z.boolean().optional().describe('Re-run after applying; revert if still failing (default true)'),
+  verifyAllProjects: z
+    .boolean()
+    .optional()
+    .describe('Verify on every project in playwright.config (e.g. chromium, firefox, webkit), not just the one that failed; revert unless all pass'),
   allowExpectationUpdate: z.boolean().optional().describe('Allow applying changed expected text (can hide regressions)'),
   config: z.string().optional().describe('playwright.config path or 1-based index'),
   timeoutMs: z.number().int().min(1_000).max(3_600_000).optional().describe('Verification run limit (default 120000)'),
@@ -683,6 +687,12 @@ export const suggestFixTool = {
         return toolText(out.join('\n'), { fix, applied: true });
       }
 
+      if (args.verifyAllProjects && python) {
+        await writeFileInsideRoot(specPath, source, root);
+        throw new PlaywrightMcpError('verifyAllProjects is not available for pytest projects', 'INVALID_INPUT', {
+          hint: 'The fix was not kept. Call suggest-fix again without verifyAllProjects, then run-test with each browser to check it.',
+        });
+      }
       const detection = await detectProject(root);
       const configPath = resolveConfigSelection(detection, args.config);
       const target = `${specPath}${failure.line ? `:${failure.line}` : ''}`;
@@ -692,7 +702,9 @@ export const suggestFixTool = {
           projectRoot: root,
           configPath: python ? undefined : configPath,
           testFiles: [python ? `${failure.file}${failure.line ? `:${failure.line}` : ''}` : target],
-          project: failure.project || undefined,
+          // Every configured project when asked, so a fix that only works in
+          // the browser that failed is reverted, not kept.
+          project: args.verifyAllProjects ? undefined : failure.project || undefined,
           retries: 0,
           retryOnFailure: false,
           timeoutMs: args.timeoutMs,
@@ -706,14 +718,23 @@ export const suggestFixTool = {
       ctx.store.setLastRun({ projectRoot: root, result, at: Date.now() });
       await recordRun(root, result, 'suggest-fix').catch(() => undefined);
 
+      const projects = [...new Set(result.failures.map((f) => f.project).filter(Boolean))];
       if (result.ok) {
-        out.push(`### ✅ Verified — the test passes with the fix (${formatDuration(result.durationMs)}).`);
+        out.push(
+          args.verifyAllProjects
+            ? `### ✅ Verified on every project — the test passes with the fix (${result.stats?.expected ?? 0} passing run(s), ${formatDuration(result.durationMs)}).`
+            : `### ✅ Verified — the test passes with the fix (${formatDuration(result.durationMs)}).`,
+        );
+        if (!args.verifyAllProjects && failure.project) {
+          out.push('', `> Checked on \`${failure.project}\` only. Pass \`verifyAllProjects: true\` to check every browser in the config.`);
+        }
       } else {
         await writeFileInsideRoot(specPath, source, root);
         const first = result.failures[0];
         out.push(
           `### ❌ Still failing — the change was reverted`,
           '',
+          ...(args.verifyAllProjects && projects.length > 0 ? [`Failed on: ${projects.map((p) => `\`${p}\``).join(', ')}`, ''] : []),
           first ? codeFence(clipLines(first.message, 8, 1_200), 'text') : (result.errorMessage ?? 'The run failed without a test failure.'),
           '',
           '> The original file is restored. Call **get-failure** for the new failure, or try another candidate by hand.',

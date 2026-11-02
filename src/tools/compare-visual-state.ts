@@ -44,6 +44,11 @@ const compareInput = z.object({
     .optional()
     .describe('Capture only this element (selector or locator)'),
   fullPage: z.boolean().optional().describe('Capture the full scrollable page (default false)'),
+  mask: z
+    .array(z.string().min(1).max(300))
+    .max(20)
+    .optional()
+    .describe('Hide dynamic parts (timestamps, ads, avatars) from both images: selectors or locators. Saved with the baseline and reused by later compares'),
   waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
   waitFor: z.string().optional().describe('Wait for this selector before capturing'),
   ...pageStateShape,
@@ -76,6 +81,8 @@ interface BaselineMeta {
   width: number;
   height: number;
   selector?: string;
+  /** Masked selectors/locators, painted over in the baseline and every compare. */
+  mask?: string[];
 }
 
 const COLOR_NAMES: Array<{ name: string; rgb: Rgb }> = [
@@ -150,6 +157,15 @@ export const compareVisualStateTool = {
       // .pw-mcp/ could be a symlink planted in the project; keep writes inside.
       await assertRealPathInside(visualDir, root);
 
+      // Masks: the argument, else the ones saved with the baseline, so a
+      // compare paints over exactly what the baseline painted over.
+      const savedMeta = await readFile(metaPath, 'utf8')
+        .then((text) => JSON.parse(text) as BaselineMeta)
+        .catch(() => null);
+      const masks = args.mask ?? (args.action === 'baseline' ? undefined : savedMeta?.mask);
+      const maskChains = (masks ?? []).map((entry) => parseLocator(entry));
+      const maskChanged = args.mask !== undefined && savedMeta !== null && JSON.stringify(args.mask) !== JSON.stringify(savedMeta.mask ?? []);
+
       // 1. Capture a fresh screenshot.
       const shotPath = tempFilePath('pw-shot', '.png');
       try {
@@ -164,6 +180,7 @@ export const compareVisualStateTool = {
             waitUntil: args.waitUntil,
             includeHtml: false,
             fullPage: args.fullPage,
+            maskChains: maskChains.length > 0 ? maskChains : undefined,
             screenshotPath: shotPath,
             gotoTimeout: Math.max(5_000, timeoutMs - 8_000),
             waitTimeout: Math.min(10_000, Math.max(3_000, timeoutMs - 8_000)),
@@ -191,6 +208,7 @@ export const compareVisualStateTool = {
           width: current.width,
           height: current.height,
           selector: args.selector,
+          ...(masks && masks.length > 0 ? { mask: masks } : {}),
         };
 
         // 2. First call (or action: 'baseline') stores the baseline.
@@ -231,6 +249,7 @@ export const compareVisualStateTool = {
               `**URL:** ${url}`,
               `**Size:** ${current.width}×${current.height}${args.selector ? ` (element: \`${args.selector}\`)` : ''}`,
               `**Saved:** \`${relativeToRoot(root, baselinePath)}\``,
+              ...(masks && masks.length > 0 ? [`**Masked:** ${masks.map((m) => `\`${m}\``).join(', ')} (reused by later compares)`] : []),
               '',
               hasBaseline && args.action === 'baseline'
                 ? '_Future `compare` calls will diff against this new baseline._'
@@ -242,9 +261,11 @@ export const compareVisualStateTool = {
         // 3. Compare against the baseline.
         const baselinePng = await readFile(baselinePath);
         const baseline = decodeScreenshot(baselinePng);
-        const baselineMeta = await readFile(metaPath, 'utf8')
-          .then((text) => JSON.parse(text) as BaselineMeta)
-          .catch(() => null);
+        const baselineMeta = savedMeta;
+        const maskLines = [
+          ...(masks && masks.length > 0 ? [`**Masked:** ${masks.map((m) => `\`${m}\``).join(', ')}`] : []),
+          ...(maskChanged ? ['> ⚠️ These masks differ from the ones saved with the baseline, so masked areas may show as changes. Re-take the baseline with `action: "baseline"` and the same `mask`.'] : []),
+        ];
 
         const result = diffImages(baseline, current, { pixelThreshold: args.pixelThreshold });
 
@@ -255,6 +276,7 @@ export const compareVisualStateTool = {
             '',
             `**Changed:** 0 pixel(s)${result.diffPixels > 0 ? ` (${result.percent}% — within tolerance ${tolerance}%)` : ''}`,
             `**Size:** ${result.width}×${result.height} · **Baseline:** ${baselineMeta?.savedAt ?? 'unknown date'}`,
+            ...maskLines,
             '',
             '_Nothing worth flagging — the render matches the baseline._',
           );
@@ -272,6 +294,7 @@ export const compareVisualStateTool = {
 
         lines.push(`## ⚠️ Visual change detected — "${args.name}"`, '');
         lines.push(`**URL:** ${url}`);
+        lines.push(...maskLines);
         lines.push(
           `**Changed:** ${result.percent}% of pixels (${result.diffPixels.toLocaleString('en-US')} px) — tolerance ${tolerance}%`,
         );

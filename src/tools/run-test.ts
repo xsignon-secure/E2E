@@ -71,6 +71,10 @@ const runTestInput = z.object({
     .boolean()
     .optional()
     .describe('Only re-run tests that failed in the previous run (Playwright --last-failed) — the fast fix → re-run loop'),
+  changed: z
+    .union([z.boolean(), z.string().max(200)])
+    .optional()
+    .describe("Only test files affected by changes (Playwright --only-changed, follows imports): true = uncommitted changes, or a git ref such as 'origin/main'"),
   config: z
     .string()
     .optional()
@@ -186,6 +190,7 @@ export function renderRunResult(result: RunTestResult, root: string, split?: Qua
   if (result.configPath) meta.push(`config \`${relativeToRoot(root, result.configPath)}\``);
   if (result.autoRetry) meta.push('auto retry ×1');
   if (result.lastFailed) meta.push('failed tests only (--last-failed)');
+  if (result.changed) meta.push(`affected by changes since \`${result.changed}\` (--only-changed)`);
   if (result.timedOut) meta.push('killed at wrapper timeout');
   if (result.partial) meta.push('partial results');
   lines.push(`**${meta.join(' · ')}**`, '');
@@ -284,6 +289,7 @@ export const runTestTool = {
         retries: args.retries,
         retryOnFailure: args.retryOnFailure,
         lastFailed: args.lastFailed,
+        changed: args.changed,
         extraArgs: args.args,
         signal: ctx.signal,
       };

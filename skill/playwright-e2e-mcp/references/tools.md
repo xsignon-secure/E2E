@@ -20,6 +20,7 @@ Runs Playwright and returns stats, failures, failure kinds and fix hints.
 | `config` | string | Config path, or 1-based index when there are several |
 | `retryOnFailure` | boolean | Retry failures once before reporting (default true; ignored when `retries` is set) |
 | `lastFailed` | boolean | Re-run only the tests that failed last time |
+| `changed` | boolean \| string | Only tests affected by changes (`--only-changed`): `true` = uncommitted, or a git ref like `origin/main` (0.14.0+) |
 | `args` | string[] | Allowlisted Playwright flags such as `--repeat-each=N`, `--max-failures=N`, `--update-snapshots`, `--shard=1/3`, `--trace=on`; path-taking flags are rejected |
 
 Traces are captured on failure automatically so `get-failure` can show the DOM.
@@ -74,6 +75,8 @@ becomes the last run for `get-failure`, `suggest-fix` and `diagnose-flaky`.
 | `actions` | array | Up to 20 steps after load: `{ type: click\|dblclick\|fill\|press\|check\|uncheck\|select\|hover\|wait\|goto, locator?, value?, url?, ms? }`. Locators may start with `frameLocator('#frame')` or use `.contentFrame()` for iframes (0.6.1+). `{ type: 'switchTab', value?: 'last'\|'first'\|'2'\|text in URL or title }` moves to a popup or new tab (0.8.0+) |
 | `actionTimeoutMs` | number | How long each action waits for its element (0.6.1+, default 10000) |
 | `routes` | array | Up to 20 network mocks before load, first match wins: `{ url (glob), method?, status?, json? \| body?, contentType?, headers?, abort?, delayMs? }` (0.5.0+). The result reports hits per mock |
+| `blockResources` | array | Skip `image`, `media`, `font`, `stylesheet`, `trackers` requests (0.14.0+) |
+| `offline` | boolean | Go offline after load, before `actions` (0.14.0+) |
 | `har` | object | `{ path, mode?: replay\|record, url?, notFound?: abort\|fallback }` (0.5.0+): replay requests from a HAR inside the project, or record the traffic to one. `routes` still win |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Engine (0.5.0+, default chromium); must be installed |
 | `viewport` | object | `{ width, height }` |
@@ -142,6 +145,7 @@ then runs once; a failing first run keeps the file and shows the error.
 | `action` | `compare` \| `baseline` | Default `compare`; `baseline` re-captures the reference |
 | `selector` | string | Capture one element |
 | `fullPage` | boolean | Full scrollable page |
+| `mask` | string[] | Selectors/locators hidden from both images (clocks, ads); saved with the baseline (0.14.0+) |
 | `tolerance` | number | Percent of pixels allowed to differ (default 0.1) |
 | `pixelThreshold` | number | Per-pixel channel delta (default 60) |
 | `waitUntil`, `waitFor`, `timeoutMs` | | As `inspect-page` |
@@ -216,6 +220,7 @@ third-party weight, and a Playwright test asserting LCP and CLS budgets.
 | `index` | number | 1-based failure index from the last run (default 1) |
 | `apply` | boolean | Write the fix (default false: diff only) |
 | `verify` | boolean | After applying, re-run and revert if still failing (default true) |
+| `verifyAllProjects` | boolean | Verify on every configured browser project, revert unless all pass (0.14.0+) |
 | `allowExpectationUpdate` | boolean | Allow applying a changed expected text (default false) |
 | `candidate` | number | Strict mode violation: which listed match the test meant (0.5.0+) |
 | `url`, `storageState`, `headers` | | Heal against a live page instead of the trace snapshot |

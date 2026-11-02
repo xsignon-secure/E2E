@@ -832,6 +832,9 @@ async function phaseTestRuns(client, origin) {
     'pass.spec.ts appeared in the --last-failed run output',
   );
 
+  const badRef = await callTool(client, 'run-test', { changed: '--output=/tmp/x' }, 30_000);
+  contains('changed refuses an option-shaped git ref', badRef.text, 'changed must be true or a git ref');
+
   // No testFiles → the target comes from the stored failure's file path;
   // this proves the parser rebase (tests/fail.spec.ts, not fail.spec.ts)
   // flows into the default targeting and covers the third verdict.
@@ -1057,8 +1060,9 @@ async function phaseHistoryAndHeal(client) {
   );
   const skipped = await callTool(client, 'check-test-change', { file: 'tests/heal.spec.ts', after: healText.replace("test('buy", "test.skip('buy") }, 30_000);
   check('check-test-change blocks a fix that skips the test', skipped.result.structuredContent?.status === 'BLOCK', skipped.text.slice(0, 400));
-  const applied = await callTool(client, 'suggest-fix', { apply: true }, 180_000);
+  const applied = await callTool(client, 'suggest-fix', { apply: true, verifyAllProjects: true }, 180_000);
   contains('suggest-fix apply verifies with a re-run', applied.text, '### ✅ Verified');
+  contains('verifyAllProjects re-runs on every configured project', applied.text, 'Verified on every project');
   check('suggest-fix reports verified: true', applied.result.structuredContent?.verified === true, JSON.stringify(applied.result.structuredContent).slice(0, 300));
   contains('the spec now uses the healed locator', readFileSync(healPath, 'utf8'), "getByRole('button', { name: 'Buy now' })");
   rmSync(healPath, { force: true });

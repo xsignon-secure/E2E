@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.13.1` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.13.1/playwright-e2e-mcp-0.13.1.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.14.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.14.0/playwright-e2e-mcp-0.14.0.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -360,7 +360,8 @@ command for your setup. Upgrade notes for each release are on the
   API mocks (500s, empty lists, slow calls), HAR record and replay, phone and tablet presets,
   Chromium, Firefox, WebKit, Chrome and Edge.
 - **Look without changing anything:** `blockWrites` stops POST, PUT, PATCH and DELETE requests
-  from reaching a real backend.
+  from reaching a real backend, and `blockResources` skips images, fonts and trackers for faster,
+  private page checks. `offline: true` cuts the network after load to test offline states.
 - **Accessibility, Web Vitals and visual diffs** that return locators and ready tests, not just a score.
 
 ### 🚀 Built for agents in 2026
@@ -446,7 +447,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.13.1
+  - uses: xsignon-secure/E2E@v0.14.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -534,12 +535,13 @@ pip install pytest-playwright && playwright install chromium
 | `GITHUB_TOKEN` / `GITLAB_TOKEN` | — | Only for `load-report` with a GitHub Actions run or GitLab job URL: read access to the run's artifacts (`GH_TOKEN` and `CI_JOB_TOKEN` work too). Sent only to github.com, gitlab.com and the hosts in `PW_MCP_CI_HOSTS` |
 | `PW_MCP_CI_HOSTS` | — | Your GitHub Enterprise or self-managed GitLab hosts (comma separated) that `load-report` may send `GITHUB_TOKEN` / `GITLAB_TOKEN` to. Run URLs on any other host are refused |
 | `PW_MCP_PYTHON` | project venv, then `python3` | The Python that runs a pytest-playwright suite |
+| `PW_MCP_BLOCK_RESOURCES` | — | Default for the page tools' `blockResources`: comma separated `image`, `media`, `font`, `stylesheet`, `trackers` |
 | `PW_MCP_BLOCK_WRITES` | off | `1` makes the page tools abort POST, PUT, PATCH and DELETE requests that no mock answers (same as `blockWrites: true`), so steps run against a real environment cannot change its data |
 | `PW_MCP_SHUFFLE_SEEDS` | random | Comma-separated seeds for `diagnose-flaky`'s `order` pass, to replay the orders a diagnosis reported |
 | `PW_MCP_LOGIN_ENV` | — | Extra environment variables `save-login` may type through `{{env:NAME}}`, comma separated. Without it only `E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*` and `LOGIN_*` are allowed |
 | `PW_MCP_HISTORY_URL` / `PW_MCP_HISTORY_TOKEN` | — | Optional: your team's [history server](history-server/README.md) (free, self-hosted) and a token from it. CI runs are uploaded with `playwright-e2e-mcp upload` (or the Action's `history-url` / `history-token` inputs) and `analyze-history` merges them with local runs. Unset (the default), nothing is ever sent anywhere. The older names `PW_MCP_PRO_KEY` / `PW_MCP_PRO_URL` still work |
 | `PW_MCP_HISTORY` | on | `0` stops recording runs to `.playwright-e2e-mcp/history.jsonl` |
-| `PW_MCP_ALLOWED_ROOTS` | — | Extra directories a caller may pass as `projectRoot` (`:`-separated, `;` on Windows). Anything outside these and the default root is rejected |
+| `PW_MCP_ALLOWED_ROOTS` | — | Extra directories a caller may pass as `projectRoot` (`:`-separated, `;` on Windows). Anything outside these and the default root is rejected. When the default root is your home folder or `/` (a client started the server without a working directory), only project folders are accepted: no hidden folders such as `~/.ssh`, and a `package.json`, Playwright config or pytest config must be present |
 | `PW_MCP_HTTP_TOKEN` | — | HTTP bridge only: bearer token that unlocks all tools: 16+ characters, 32+ recommended (see [Hosted endpoint](docs/hosted-endpoint.md)) |
 | `PW_MCP_ALLOWED_HOSTS` | localhost + Vercel hostnames when there is no token | HTTP bridge only: comma-separated `Host` allowlist; `*` accepts any |
 | `PW_MCP_MAX_FAILED_AUTH` | `20` | HTTP bridge only: wrong tokens or access keys one client address may send in 15 minutes before it gets `429` |
@@ -619,6 +621,10 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.14:** `run-test` `changed: true` (only tests affected by your changes), `suggest-fix`
+  `verifyAllProjects` (keep a fix only if every browser passes), `mask` for dynamic regions in
+  `compare-visual-state`, `blockResources` and `offline` for page tools, and a guard when the
+  server starts in your home folder.
 - **0.13.1:** security fix: `load-report` only sends `GITHUB_TOKEN` / `GITLAB_TOKEN` to github.com,
   gitlab.com and hosts in `PW_MCP_CI_HOSTS`, never along a redirect. Page tools and `suggest-fix`
   now work in pytest projects installed from npm or Docker (the server ships `playwright-core`).

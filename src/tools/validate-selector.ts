@@ -19,6 +19,7 @@ import {
   describePageState,
   describeRouteHits,
   describeTabs,
+  describeBlockedResources,
   describeBlockedWrites,
   guard,
   loginHint,
@@ -166,6 +167,7 @@ export const validateSelectorTool = {
       if (mocks.length > 0) lines.push('**Network mocks:**', ...mocks);
       lines.push(...describeTabs(data.tabs));
       lines.push(...describeBlockedWrites(data.blockedWrites));
+      lines.push(...describeBlockedResources(data.blockedResources));
       lines.push('');
       if (status) lines.push(status, '');
       const matches = data.elements;

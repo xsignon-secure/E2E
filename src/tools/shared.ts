@@ -7,7 +7,8 @@
  * the public surface documented in the README.)
  */
 
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import type {
@@ -139,6 +140,43 @@ export function allowedProjectRoots(defaultRoot: string): string[] {
 }
 
 /**
+ * True when `dir` is a home folder or a filesystem root: what the default
+ * root becomes when an MCP client starts the server without a working
+ * directory (Claude Desktop starts in / or the home folder). Everything
+ * under it would then be fair game for `projectRoot`.
+ */
+export function isBroadRoot(dir: string, home = os.homedir()): boolean {
+  const norm = (value: string) => {
+    const out = normalizePath(path.resolve(value)).replace(/\/+$/, '');
+    return process.platform === 'win32' ? out.toLowerCase() : out;
+  };
+  const target = norm(dir);
+  if (target === '' || /^[a-z]:$/i.test(target)) return true; // "/" or "C:/"
+  return home !== '' && target === norm(home);
+}
+
+/** Files that mark a directory as a test project (Node or Python). */
+const PROJECT_MARKERS = /^(package\.json|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|conftest\.py|playwright\.config\.[cm]?[jt]s)$/;
+
+/**
+ * Under a broad default root, only real project folders may be picked:
+ * no hidden directories (~/.ssh, ~/.aws, ~/.config) and something that
+ * looks like a Node or Python project, so a prompt-injected agent cannot
+ * point the tools at the user's whole home folder.
+ */
+async function assertProjectUnderBroadRoot(resolved: string, base: string): Promise<void> {
+  const relative = path.posix.relative(normalizePath(base), normalizePath(resolved));
+  const hint = 'The server was started in your home folder or the filesystem root. Set PW_MCP_PROJECT_ROOT (or the working directory in your MCP client config) to your project folder.';
+  if (relative === '' || relative.startsWith('..') || relative.split('/').some((segment) => segment.startsWith('.'))) {
+    throw new PlaywrightMcpError(`Project root ${resolved} is not a project folder`, 'INVALID_PATH', { hint });
+  }
+  const entries = await readdir(toNativePath(resolved)).catch(() => [] as string[]);
+  if (!entries.some((name) => PROJECT_MARKERS.test(name))) {
+    throw new PlaywrightMcpError(`Project root ${resolved} has no package.json, Playwright config or pytest config`, 'INVALID_PATH', { hint });
+  }
+}
+
+/**
  * Resolve the project root: defaults to the server's working directory;
  * an explicit value is resolved against it, must exist, and must sit
  * inside the default root or a PW_MCP_ALLOWED_ROOTS entry (symlinks
@@ -149,6 +187,9 @@ export async function resolveProjectRoot(
   ctx: ToolContext,
 ): Promise<string> {
   const base = normalizePath(ctx.projectRoot);
+  const broad = isBroadRoot(base);
+  // No projectRoot: the default root as it is (page tools on a URL need no
+  // project). An explicit one under a broad root must be a real project.
   if (input === undefined || input.trim() === '') return base;
   if (ctx.restricted) {
     throw new PlaywrightMcpError('projectRoot cannot be changed on this server', 'INVALID_PATH', {
@@ -168,6 +209,10 @@ export async function resolveProjectRoot(
     throw new PlaywrightMcpError(`Project root not found: ${resolved}`, 'INVALID_PATH', {
       hint: 'Pass `projectRoot` as an existing directory (absolute, or relative to the server working directory).',
     });
+  }
+  // A folder the user listed in PW_MCP_ALLOWED_ROOTS is trusted as it is.
+  if (broad && !allowed.slice(1).some((root) => isPathInside(resolved, root))) {
+    await assertProjectUnderBroadRoot(resolved, base);
   }
   for (const root of allowed) {
     if (!isPathInside(resolved, root)) continue;
@@ -420,6 +465,15 @@ export const pageStateShape = {
     .boolean()
     .optional()
     .describe('Abort POST/PUT/PATCH/DELETE requests no mock answers, so steps cannot change real data (default: PW_MCP_BLOCK_WRITES)'),
+  blockResources: z
+    .array(z.enum(['image', 'media', 'font', 'stylesheet', 'trackers']))
+    .max(5)
+    .optional()
+    .describe("Skip these requests for speed and privacy: image, media, font, stylesheet, trackers (known analytics/ad hosts); default PW_MCP_BLOCK_RESOURCES"),
+  offline: z
+    .boolean()
+    .optional()
+    .describe('Go offline once the page has loaded, before steps run, to check offline and retry states'),
   har: z
     .object({
       path: z.string().min(1).max(500).describe('.har or .zip inside the project'),
@@ -454,11 +508,36 @@ export interface PageStateInput {
   routes?: Array<z.infer<typeof routeMockSchema>>;
   viewport?: { width: number; height: number };
   blockWrites?: boolean;
+  blockResources?: BlockableResource[];
+  offline?: boolean;
   har?: { path: string; mode?: 'replay' | 'record'; url?: string; notFound?: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
   channel?: BrowserChannel;
   connect?: string;
+}
+
+export type BlockableResource = 'image' | 'media' | 'font' | 'stylesheet' | 'trackers';
+
+const BLOCKABLE: readonly BlockableResource[] = ['image', 'media', 'font', 'stylesheet', 'trackers'];
+
+/**
+ * Hosts skipped by blockResources 'trackers': common analytics, tag and ad
+ * networks. A request to the host or any subdomain of it is aborted.
+ */
+export const TRACKER_HOSTS: readonly string[] = [
+  'google-analytics.com', 'googletagmanager.com', 'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+  'facebook.net', 'connect.facebook.net', 'hotjar.com', 'clarity.ms', 'segment.com', 'segment.io', 'mixpanel.com',
+  'amplitude.com', 'fullstory.com', 'heap.io', 'heapanalytics.com', 'mouseflow.com', 'newrelic.com', 'nr-data.net',
+  'sentry.io', 'datadoghq-browser-agent.com', 'browser-intake-datadoghq.com', 'adsrvr.org', 'criteo.com', 'taboola.com',
+  'outbrain.com', 'linkedin.com/px', 'snap.licdn.com', 'bat.bing.com', 'quantserve.com', 'scorecardresearch.com',
+].filter((host) => !host.includes('/'));
+
+/** blockResources from the argument, else PW_MCP_BLOCK_RESOURCES (comma separated). */
+export function resolveBlockResources(input: BlockableResource[] | undefined): BlockableResource[] | undefined {
+  const raw = input ?? (process.env.PW_MCP_BLOCK_RESOURCES ?? '').split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+  const picked = [...new Set(raw)].filter((entry): entry is BlockableResource => (BLOCKABLE as readonly string[]).includes(entry));
+  return picked.length > 0 ? picked : undefined;
 }
 
 export type BrowserChannel = 'chrome' | 'chrome-beta' | 'msedge' | 'msedge-beta';
@@ -487,6 +566,11 @@ export interface ResolvedPageState {
   viewport?: { width: number; height: number };
   /** Abort write requests (POST/PUT/PATCH/DELETE) that no mock or HAR answers. */
   blockWrites?: boolean;
+  /** Resource types (and tracker hosts) to abort; mocks and HAR answer first. */
+  blockResources?: BlockableResource[];
+  trackerHosts?: readonly string[];
+  /** Go offline after the page loads, before steps. */
+  offline?: boolean;
   har?: { path: string; mode: 'replay' | 'record'; url?: string; notFound: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
@@ -668,6 +752,12 @@ export async function resolvePageState(
   if (input.viewport) out.viewport = input.viewport;
   const blockWrites = input.blockWrites ?? /^(1|true|yes)$/i.test(process.env.PW_MCP_BLOCK_WRITES ?? '');
   if (blockWrites) out.blockWrites = true;
+  const blockResources = resolveBlockResources(input.blockResources);
+  if (blockResources) {
+    out.blockResources = blockResources;
+    if (blockResources.includes('trackers')) out.trackerHosts = TRACKER_HOSTS;
+  }
+  if (input.offline) out.offline = true;
   if (input.har) out.har = await resolveHar(input.har, root, ctx);
   if (input.browser && input.browser !== 'chromium') {
     if (serverlessChromiumEnabled()) {
@@ -770,6 +860,8 @@ export function describePageState(state: ResolvedPageState, root: string): strin
   if (state.actions?.length) parts.push(`${state.actions.length} step(s) run first`);
   if (state.routes?.length) parts.push(`${state.routes.length} mocked route(s)`);
   if (state.blockWrites) parts.push('write requests blocked');
+  if (state.blockResources) parts.push(`skipping ${state.blockResources.join(', ')}`);
+  if (state.offline) parts.push('offline after load');
   if (state.har) {
     const file = `\`${relativeToRoot(root, state.har.path)}\``;
     parts.push(state.har.mode === 'record' ? `recording HAR to ${file}` : `HAR replay from ${file}`);
@@ -814,6 +906,8 @@ export interface BrowserScriptConfig extends Omit<ResolvedPageState, never> {
   selector?: string;
   /** Parsed locator chain for validate / screenshot modes. */
   selectorChain?: LocatorCall[];
+  /** mode screenshot: elements painted over (compare-visual-state mask). */
+  maskChains?: LocatorCall[][];
   /** inspect: 'elements' (DOM inventory) or 'locators' (compact locator map). */
   view?: 'elements' | 'locators' | 'aria';
   /** heal: words from the broken locator, and its role when it had one. */
@@ -927,6 +1021,8 @@ export interface BrowserScriptData {
   actionsDone?: string[];
   /** blockWrites: the write requests that were aborted (first 20) and how many in all. */
   blockedWrites?: { total: number; requests: Array<{ method: string; url: string }> };
+  /** blockResources: how many requests were skipped. */
+  blockedResources?: number;
   /** Every open tab, when an action opened more than one; `active` is the one inspected. */
   tabs?: BrowserTab[];
   durationMs?: number;
@@ -951,6 +1047,11 @@ export interface BrowserTab {
   url: string;
   title: string;
   active: boolean;
+}
+
+/** One Markdown line counting the requests blockResources skipped. */
+export function describeBlockedResources(count: number | undefined): string[] {
+  return count ? [`**Skipped requests:** ${count} (blockResources)`] : [];
 }
 
 /** Markdown lines naming the write requests blockWrites aborted. */
