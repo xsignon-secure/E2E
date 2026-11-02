@@ -189,8 +189,29 @@ Or paste the standard config into `.gemini/settings.json` (Qwen Code: `.qwen/set
 <details>
 <summary><b>Windsurf, Cline, Zed, Freebuff and other clients</b></summary>
 
-Add the standard config to the client's MCP config file (Cline: *MCP Servers → Configure*).
-Clients that take a command, such as Zed, run `npx` with the arguments `-y playwright-e2e-mcp`.
+**Windsurf:** `npx -y playwright-e2e-mcp init --client windsurf` adds it for you, or put the
+standard config in `~/.codeium/windsurf/mcp_config.json`.
+
+**Cline:** open *MCP Servers → Configure* and paste the standard config into
+`cline_mcp_settings.json`.
+
+**Zed:** add it under `context_servers` in `~/.config/zed/settings.json`, or use
+*Settings → AI → MCP Servers → Add Local Server*:
+
+```json
+{
+  "context_servers": {
+    "playwright-e2e": {
+      "command": "npx",
+      "args": ["-y", "playwright-e2e-mcp"],
+      "env": {}
+    }
+  }
+}
+```
+
+Other clients: add the standard config to the client's MCP config file. Clients that take a
+command run `npx` with the arguments `-y playwright-e2e-mcp`.
 
 Freebuff / Codebuff: drop an `mcp.json` with the standard config into your project's `.agents/`
 folder. This repo ships one in [`.agents/mcp.json`](.agents/mcp.json); Freebuff asks you to trust
@@ -597,12 +618,6 @@ a test.
 [All release notes](https://github.com/xsignon-secure/E2E/releases)
 
 ## 📚 More documentation
-
-### Windsurf, Cline and Zed
-
-- **Windsurf** — `~/.codeium/windsurf/mcp_config.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
-- **Cline** — `cline_mcp_settings.json`: `{ "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }`
-- **Zed** — `~/.config/zed/settings.json`: `{ "context_servers": { "playwright-e2e": { "command": { "path": "npx", "args": ["-y", "playwright-e2e-mcp"] } } } }`
 
 - [Tool reference](docs/tools.md): every argument, example outputs, edge cases handled
 - [Hosted endpoint](docs/hosted-endpoint.md): the HTTP bridge for ChatGPT and claude.ai connectors
