@@ -1,0 +1,111 @@
+/**
+ * 0.15.0: pytest-playwright parity. audit-tests' Python rules and rewrites,
+ * the generated pytest module, and the pytest plugin under pytest-xdist.
+ * Live runs are in pytest-runner.test.mjs (they need PW_MCP_PYTHON).
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { isPythonTestFile, pythonWebFirstRewrite, scanPythonFlakeRisks } from '../dist/utils/flake-rules-python.js';
+import { buildPythonSpec, pythonEndStateAssertions, pythonTestName, toPythonLocator } from '../dist/tools/generate-e2e-test.js';
+import { attemptsFromOutcomes } from '../dist/tools/diagnose-flaky.js';
+
+const SRC = `import time
+from playwright.sync_api import Page, expect
+
+def helper():
+    time.sleep(1)
+
+def test_cart(page: Page):
+    """Docstring with page.wait_for_timeout(100) inside."""
+    page.goto("http://localhost:3000/cart")
+    page.wait_for_timeout(500)  # settle
+    assert page.get_by_text("Saved").is_visible()
+    assert page.locator("#total").inner_text() == "$10"
+    assert not page.get_by_role("alert").is_visible()
+    assert page.url == "http://localhost:3000/done"
+    page.get_by_role("link").click(force=True)
+    page.wait_for_load_state("networkidle")
+    el = page.query_selector("#x")
+    page.locator("div > ul > li > a").click(timeout=0)
+
+async def test_async(page):
+    page.goto("/")
+    await page.get_by_text("x").click()
+    expect(page.get_by_text("y")).to_be_visible()
+    assert await page.get_by_text("z").is_visible()
+`;
+
+test('pytest modules are recognised by name', () => {
+  for (const name of ['tests/test_cart.py', 'test_x.py', 'shop/cart_test.py']) assert.equal(isPythonTestFile(name), true, name);
+  for (const name of ['conftest.py', 'tests/helpers.py', 'tests/cart.spec.ts', 'test_x.pyc']) assert.equal(isPythonTestFile(name), false, name);
+});
+
+test('the Python scan finds each flake risk once, in the right test', () => {
+  const found = scanPythonFlakeRisks('tests/test_cart.py', SRC).map((f) => `${f.line} ${f.rule} ${f.test ?? '-'}`);
+  assert.deepEqual(found, [
+    '5 sleep -',
+    '9 hardcoded-url test_cart',
+    '10 hard-wait test_cart',
+    '11 non-retrying-assertion test_cart',
+    '12 non-retrying-assertion test_cart',
+    '13 non-retrying-assertion test_cart',
+    '14 non-retrying-assertion test_cart',
+    '15 force-action test_cart',
+    '16 networkidle test_cart',
+    '17 element-handle test_cart',
+    '18 fragile-selector test_cart',
+    '18 no-timeout test_cart',
+    '21 missing-await test_async',
+    '23 missing-await test_async',
+    '24 non-retrying-assertion test_async',
+  ]);
+  const messages = scanPythonFlakeRisks('tests/test_cart.py', SRC).map((f) => f.message).join('\n');
+  assert.doesNotMatch(messages, /waitForTimeout|getByRole/, 'messages use Python names');
+});
+
+test('one-shot assertions get expect() rewrites when the file imports expect', () => {
+  const fixes = Object.fromEntries(scanPythonFlakeRisks('t/test_a.py', SRC).filter((f) => f.fix).map((f) => [f.line, f.fix.trim()]));
+  assert.equal(fixes[11], 'expect(page.get_by_text("Saved")).to_be_visible()');
+  assert.equal(fixes[12], 'expect(page.locator("#total")).to_have_text("$10")');
+  assert.equal(fixes[13], 'expect(page.get_by_role("alert")).not_to_be_visible()');
+  assert.equal(fixes[14], 'expect(page).to_have_url("http://localhost:3000/done")');
+  assert.equal(fixes[21], 'await page.goto("/")');
+  assert.equal(fixes[24], 'await expect(page.get_by_text("z")).to_be_visible()');
+
+  const noImport = SRC.replace('from playwright.sync_api import Page, expect', 'from playwright.sync_api import Page');
+  assert.equal(scanPythonFlakeRisks('t/test_a.py', noImport).find((f) => f.line === 11).fix, undefined);
+
+  assert.equal(pythonWebFirstRewrite('    assert page.locator("li").count() == 3'), '    expect(page.locator("li")).to_have_count(3)');
+  assert.equal(pythonWebFirstRewrite('    assert box.is_checked() == False'), '    expect(box).not_to_be_checked()');
+  assert.equal(pythonWebFirstRewrite('    assert link.get_attribute("href") == "/a"'), '    expect(link).to_have_attribute("href", "/a")');
+  assert.equal(pythonWebFirstRewrite('    assert "Saved" in page.inner_text("body")'), undefined);
+  assert.equal(pythonWebFirstRewrite('    assert a.is_visible() and b.is_visible()'), undefined);
+});
+
+test('generated pytest modules use Python locators and names', () => {
+  assert.equal(pythonTestName('Log in with valid credentials!'), 'test_log_in_with_valid_credentials');
+  assert.equal(toPythonLocator("getByRole('button', { name: 'Buy' })"), 'get_by_role("button", name="Buy")');
+  const spec = buildPythonSpec({
+    description: 'checkout',
+    entryUrl: 'https://shop.test/',
+    selectors: [{ kind: 'test-id', value: 'pay', locator: "getByTestId('pay')", file: 'src/Pay.tsx', line: 4 }],
+  });
+  assert.match(spec, /^from playwright\.sync_api import Page, expect$/m);
+  assert.match(spec, /^# Generated by playwright-e2e-mcp for: "checkout"$/m);
+  assert.match(spec, /^def test_checkout\(page: Page\):$/m);
+  assert.match(spec, /^ {4}page\.goto\("https:\/\/shop\.test\/"\)$/m);
+  assert.match(spec, /^ {4}expect\(page\.get_by_test_id\("pay"\)\)\.to_be_visible\(\)$/m);
+
+  const end = pythonEndStateAssertions({ entryUrl: 'https://a.test/', finalUrl: 'https://a.test/done?id=4', snapshot: '- heading "Thanks \\"Ann\\"" [level=1]', scope: 'main' });
+  assert.equal(end.usesRe, true);
+  assert.equal(end.lines[0], '    expect(page).to_have_url(re.compile("\\\\/done(?:[?#]|$)"))');
+  assert.equal(end.lines[1], '    expect(page.locator("main")).to_match_aria_snapshot("""');
+  assert.equal(end.lines[2], '        - heading "Thanks \\\\"Ann\\\\"" [level=1]');
+});
+
+test('diagnose-flaky turns each pytest run into per-test attempts', () => {
+  const attempts = attemptsFromOutcomes({ outcomes: [{ file: 'tests/test_a.py', line: 3, title: 'test_a.py › test_ok', project: 'chromium', status: 'passed', durationMs: 800 }, { file: 'tests/test_a.py', line: 7, title: 'test_a.py › test_bad', status: 'failed', message: 'AssertionError' }] }, 2);
+  assert.deepEqual(attempts.map((a) => [a.repeatEachIndex, a.retry, a.status, a.durationMs]), [[2, 0, 'passed', 800], [2, 0, 'failed', 0]]);
+  assert.equal(attempts[1].message, 'AssertionError');
+});

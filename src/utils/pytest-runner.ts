@@ -121,6 +121,10 @@ _path = os.environ.get("${PYTEST_RESULTS_ENV}")
 _state = {}
 
 
+def _worker_id(config):
+    return getattr(config, "workerinput", {}).get("workerid")
+
+
 def _write(obj):
     if not _path:
         return
@@ -152,10 +156,16 @@ def _trace_files(item):
 
 
 def pytest_collection_finish(session):
+    if _worker_id(session.config) not in (None, "gw0"):
+        return
     _write({"event": "collected", "count": len(session.items), "rootdir": str(session.config.rootpath)})
 
 
 def pytest_runtest_logreport(report):
+    # With pytest-xdist (-n) the controller sees every worker's report again
+    # (tagged with the worker node); the worker already wrote it.
+    if hasattr(report, "node"):
+        return
     entry = _state.setdefault(report.nodeid, {"outcome": "passed", "duration": 0.0})
     entry["duration"] += getattr(report, "duration", 0.0) or 0.0
     if report.when == "call" and report.passed and hasattr(report, "wasxfail"):
@@ -198,6 +208,8 @@ def pytest_runtest_makereport(item, call):
 
 
 def pytest_sessionfinish(session, exitstatus):
+    if _worker_id(session.config) is not None:
+        return
     _write({"event": "finished", "exitstatus": int(exitstatus)})
 `;
 

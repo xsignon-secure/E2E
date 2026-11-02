@@ -16,6 +16,8 @@ import type { FlakeFinding, FlakeSeverity } from '../utils/flake-rules.js';
 import { joinProjectPath, isPathInside, sanitizeUserPath, toNativePath, writeFileInsideRoot } from '../utils/path-utils.js';
 import { runTests } from '../utils/playwright-runner.js';
 import { detectProject, findTestFiles } from '../utils/project-detector.js';
+import { scanPythonFlakeRisks } from '../utils/flake-rules-python.js';
+import { detectPytestProject } from '../utils/pytest-runner.js';
 import { readHistory, recordRun, testStats } from '../utils/run-history.js';
 import type { TestStats } from '../utils/run-history.js';
 import {
@@ -157,7 +159,7 @@ function findingData(f: FlakeFinding) {
 export const auditTestsTool = {
   name: 'audit-tests',
   description:
-    'Audit the Playwright test code for flake risks (hard waits, one-shot assertions instead of web-first ones, missing awaits, .only, force clicks, networkidle, element handles, layout selectors, acting right after goto on a server-rendered app before it hydrates) and rank files by how flaky their tests have been in the run history. fix: true rewrites the mechanical ones, re-runs the touched files and restores them if the run fails.',
+    'Audit the Playwright test code for flake risks (hard waits, one-shot assertions instead of web-first ones, missing awaits, .only, force clicks, networkidle, element handles, layout selectors, acting right after goto on a server-rendered app before it hydrates) and rank files by how flaky their tests have been in the run history. fix: true rewrites the mechanical ones, re-runs the touched files and restores them if the run fails. TS/JS specs and pytest-playwright modules.',
   inputSchema: auditTestsInput,
   handler: async (args: AuditTestsInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('audit-tests', async () => {
@@ -168,13 +170,15 @@ export const auditTestsTool = {
         });
       }
       const detection = await detectProject(root);
+      // pytest-playwright suites: scan test_*.py / *_test.py with the Python rules.
+      const python = !detection.hasPlaywright && (await detectPytestProject(root)) !== null;
       let testDir: string | null = detection.testDir;
       if (args.testDir !== undefined) testDir = sanitizeUserPath(args.testDir, root);
       else if (testDir !== null && !isPathInside(testDir, root)) testDir = null;
 
       const wanted = args.filter?.toLowerCase();
       const ssr = ssrFramework(await readFile(toNativePath(joinProjectPath(root, 'package.json')), 'utf8').then((text) => JSON.parse(text) as Parameters<typeof ssrFramework>[0], () => undefined));
-      const files = (await findTestFiles(root, { testDir, limit: 2_000 })).filter((f) => !wanted || f.toLowerCase().includes(wanted));
+      const files = (await findTestFiles(root, { testDir, limit: 2_000, python })).filter((f) => !wanted || f.toLowerCase().includes(wanted));
       const minRank = RANK[args.minSeverity ?? 'low'];
       const sources = new Map<string, string>();
       const findings: FlakeFinding[] = [];
@@ -184,7 +188,7 @@ export const auditTestsTool = {
         if (!info || info.size > MAX_FILE_BYTES) continue;
         const source = await readFile(toNativePath(full), 'utf8');
         sources.set(file, source);
-        findings.push(...scanFlakeRisks(file, source, { ssr }).filter((f) => RANK[f.severity] >= minRank));
+        findings.push(...(python ? scanPythonFlakeRisks(file, source) : scanFlakeRisks(file, source, { ssr })).filter((f) => RANK[f.severity] >= minRank));
       }
 
       const history = await readHistory(root, args.historyRuns ?? 50).catch(() => []);

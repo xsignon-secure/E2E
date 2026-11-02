@@ -117,6 +117,8 @@ Falls back to a source scan when Playwright cannot list (broken install or spec)
 
 ## generate-e2e-test
 
+In a pytest-playwright project (0.15.0+) it writes `tests/generated/test_<slug>.py` in Python and verifies with pytest; the start URL can come from `base_url` in the pytest config.
+
 | Argument | Type | Notes |
 | --- | --- | --- |
 | `description` | string | Required: what the test should cover |
@@ -153,6 +155,8 @@ then runs once; a failing first run keeps the file and shows the error.
 Baselines live in `.pw-mcp/visual/`.
 
 ## diagnose-flaky
+
+pytest projects (0.15.0+): one pytest process per run; `isolate` needs pytest-xdist; `order` is Node only.
 
 | Argument | Type | Notes |
 | --- | --- | --- |
@@ -263,6 +267,8 @@ executions per day; `commits` names, per failing or flaky test, the first bad
 commit after its last passing streak and the last good one.
 
 ## audit-tests (0.6.0+)
+
+Reads `test_*.py` / `*_test.py` in pytest projects (0.15.0+); `fix` rewrites `assert loc.is_visible()` to `expect(loc).to_be_visible()` when the module imports `expect`.
 
 | Argument | Type | Notes |
 | --- | --- | --- |

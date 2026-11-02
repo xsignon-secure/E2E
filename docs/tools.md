@@ -256,7 +256,7 @@ advice, or `❌ INVALID` with the parse error.
 | --- | --- | --- |
 | `description` | string | What the test should cover (required) |
 | `pageUrl` | string | Page the test starts on (default: `baseURL` / `webServer.url` from config) |
-| `testDir` / `file` | string | Where to write the spec (default: detected `testDir` + `generated/<slug>.spec.ts`); `file` must end in `.spec.*` or `.test.*` |
+| `testDir` / `file` | string | Where to write the spec (default: detected `testDir` + `generated/<slug>.spec.ts`); `file` must end in `.spec.*` or `.test.*`. In a pytest-playwright project the test is a Python module, `tests/generated/test_<slug>.py` by default, and `file` must be `test_*.py` or `*_test.py` |
 | `write` | boolean | Write the file to disk (default `true`) |
 | `overwrite` | boolean | Replace an existing spec at the target path; only specs this tool generated can be replaced |
 | `liveInspect` | boolean | Cross-check selectors against the live page (default on when a URL is known) |
@@ -323,7 +323,7 @@ and write a red-highlighted diff image for review.
 | `runs` | number | Repetitions, `2–10` (default `3`) |
 | `isolate` | boolean | Also tell parallelism bugs from flakiness: repeat fully parallel (`workers` default `4`), then repeat the failing tests with one worker |
 | `order` | boolean | Also run the target files in `runs` random orders with one worker (Playwright 1.64+ `--shuffle`), replay a failing order, and name the test it relies on or is broken by |
-| `separateProcesses` | boolean | Start a fresh Playwright process per repetition instead of one `--repeat-each` process (slower; for flakes that depend on global setup or a cold start) |
+| `separateProcesses` | boolean | (pytest projects always run one pytest process per repetition; `isolate` there needs pytest-xdist, and `order` is not available) Start a fresh Playwright process per repetition instead of one `--repeat-each` process (slower; for flakes that depend on global setup or a cold start) |
 | `browser` / `headed` / `workers` / `config` | — | As with `run-test` |
 | `timeoutMs` | number | Hard wall-clock limit **per repetition** (default `120000`); one `--repeat-each` process gets this × `runs` |
 | `projectRoot` | string | Project directory |
@@ -536,6 +536,11 @@ them.
 | `fix` | boolean | Rewrite the mechanical findings, re-run the touched files, and restore them if the run fails |
 | `verify` | boolean | With `fix`: re-run the touched files (default `true`) |
 | `config` / `timeoutMs` | — | For the verify run, as with `run-test` |
+
+In a pytest-playwright project it reads `test_*.py` / `*_test.py` with the same rules in Python's
+spelling (`wait_for_timeout`, `time.sleep`, `assert loc.is_visible()`, un-awaited calls in
+`async def` tests, `force=True`, `query_selector`, `timeout=0`); `fix` rewrites one-shot
+asserts to `expect(...)` when the module imports `expect`, and verifies with pytest.
 
 Reads the spec files (no browser, nothing runs unless `fix` is set) and flags the code that
 makes tests pass or fail on timing:
