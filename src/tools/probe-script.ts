@@ -1066,10 +1066,18 @@ let serverPlaywrightVersion = '';
     }
 
     if (cfg.mode === 'screenshot') {
+      // mask: painted one flat color in every capture, so a timestamp or an
+      // ad slot never counts as a change.
+      const shotOptions = { path: cfg.screenshotPath };
+      if (cfg.maskChains && cfg.maskChains.length) {
+        shotOptions.mask = cfg.maskChains.map((chain) => resolveChain(page, chain));
+        shotOptions.maskColor = '#FF00FF';
+      }
       if (cfg.selectorChain) {
-        await resolveChain(page, cfg.selectorChain).first().screenshot({ path: cfg.screenshotPath });
+        await resolveChain(page, cfg.selectorChain).first().screenshot(shotOptions);
       } else {
-        await page.screenshot({ path: cfg.screenshotPath, fullPage: !!cfg.fullPage });
+        shotOptions.fullPage = !!cfg.fullPage;
+        await page.screenshot(shotOptions);
       }
       send({
         ok: true,

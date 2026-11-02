@@ -906,6 +906,8 @@ export interface BrowserScriptConfig extends Omit<ResolvedPageState, never> {
   selector?: string;
   /** Parsed locator chain for validate / screenshot modes. */
   selectorChain?: LocatorCall[];
+  /** mode screenshot: elements painted over (compare-visual-state mask). */
+  maskChains?: LocatorCall[][];
   /** inspect: 'elements' (DOM inventory) or 'locators' (compact locator map). */
   view?: 'elements' | 'locators' | 'aria';
   /** heal: words from the broken locator, and its role when it had one. */
