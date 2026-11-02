@@ -437,9 +437,9 @@ export function findMocks(file: string, src: string): FoundMock[] {
     let pattern: string | undefined;
     let regex = false;
     let afterPattern = 0;
-    const str = /^(?:r|f)?(['"`])((?:\\.|(?!\1).)*)\1/.exec(call);
-    const re = /^\/((?:\\.|[^/\n])+)\/[a-z]*/.exec(call);
-    const pyRe = /^re\.compile\(\s*r?(['"])((?:\\.|(?!\1).)*)\1\s*\)/.exec(call);
+    const str = /^(?:r|f)?(['"`])((?:\\.|(?!\1)[^\\])*)\1/.exec(call);
+    const re = /^\/((?:\\.|[^/\n\\])+)\/[a-z]*/.exec(call);
+    const pyRe = /^re\.compile\(\s*r?(['"])((?:\\.|(?!\1)[^\\])*)\1\s*\)/.exec(call);
     if (str) {
       pattern = str[2];
       afterPattern = str[0].length;
