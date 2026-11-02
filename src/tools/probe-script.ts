@@ -775,6 +775,8 @@ function summariseRequests(requests, timings, pageUrl) {
   };
 }
 
+let serverPlaywrightVersion = '';
+
 (async () => {
   const { createRequire } = require('node:module');
   const req = createRequire(cfg.projectRoot + '/package.json');
@@ -791,11 +793,18 @@ function summariseRequests(requests, timings, pageUrl) {
       } catch (errC) {}
       // No Node Playwright in the project (a pytest-playwright project):
       // use one installed next to this server, if there is one.
+      // playwright-core ships with the server (a dependency), so this works
+      // from npx, the .mcpb bundle and the Docker image, not just a checkout.
       if (!pw && cfg.serverRoot) {
         const own = createRequire(cfg.serverRoot + '/package.json');
-        for (const name of ['playwright', '@playwright/test']) {
+        for (const name of ['playwright', '@playwright/test', 'playwright-core']) {
           try {
             pw = own(name);
+            try {
+              serverPlaywrightVersion = own('playwright-core/package.json').version;
+            } catch (errV) {
+              serverPlaywrightVersion = 'latest';
+            }
             break;
           } catch (errD) {}
         }
@@ -806,7 +815,7 @@ function summariseRequests(requests, timings, pageUrl) {
         ok: false,
         kind: 'NO_PLAYWRIGHT',
         error: 'Playwright is not installed in ' + cfg.projectRoot,
-        hint: 'Run: npm install -D @playwright/test && npx playwright install (a pytest-playwright project needs it too: the page tools and suggest-fix drive the browser with Node Playwright)',
+        hint: 'Run: npm install -D @playwright/test && npx playwright install',
       });
       process.exit(1);
     }
@@ -1276,6 +1285,10 @@ function summariseRequests(requests, timings, pageUrl) {
       if (q > 0) message = message.split(u.slice(q)).join('?<redacted>');
     }
     const classified = classifyError(message);
+    if (serverPlaywrightVersion && classified.kind === 'NO_PLAYWRIGHT' && /npx playwright install/.test(classified.hint || '')) {
+      // The server's own Playwright needs browsers of its own version.
+      classified.hint = 'This project has no Node Playwright, so the server uses its own (' + serverPlaywrightVersion + '). Install its browser once: npx -y playwright@' + serverPlaywrightVersion + ' install chromium';
+    }
     const extra = (err && err.pageUrl ? '\nPage URL at failure: ' + err.pageUrl : '') + (err && err.callLog ? '\nCall log:\n' + err.callLog : '');
     send({ ok: false, kind: classified.kind, error: message + extra, hint: classified.hint, actionsDone: err && err.actionsDone });
     try { if (browser) await closeBrowser(); } catch (closeErr) { /* ignore */ }

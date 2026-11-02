@@ -42,7 +42,47 @@ export function parseCiRunRef(input: string): CiRunRef | undefined {
   return undefined;
 }
 
+/**
+ * Origins a CI token may be sent to: the public GitHub and GitLab APIs, the
+ * API the user set in PW_MCP_GITHUB_API / PW_MCP_GITLAB_API, and the
+ * self-hosted GitHub Enterprise or GitLab hosts listed in PW_MCP_CI_HOSTS.
+ * The run URL comes from the agent, so a URL naming any other host must
+ * never receive the user's token.
+ */
+export function trustedCiOrigins(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  const origins = new Set(['https://api.github.com', 'https://gitlab.com']);
+  for (const value of [env.PW_MCP_GITHUB_API, env.PW_MCP_GITLAB_API]) {
+    if (!value) continue;
+    try {
+      origins.add(new URL(value).origin);
+    } catch {
+      // An unparsable setting adds nothing.
+    }
+  }
+  for (const entry of (env.PW_MCP_CI_HOSTS ?? '').split(',')) {
+    const host = entry.trim().toLowerCase().replace(/^https:\/\//, '').replace(/\/+$/, '');
+    if (/^[a-z0-9.-]+(?::\d+)?$/.test(host)) origins.add(`https://${host}`);
+  }
+  return origins;
+}
+
+/** Refuse to send a token to an API host the user has not trusted. */
+export function assertTrustedApi(ref: CiRunRef, env: NodeJS.ProcessEnv = process.env): void {
+  let origin: string;
+  try {
+    origin = new URL(ref.api).origin;
+  } catch {
+    throw new PlaywrightMcpError('The CI API address is not a valid URL', 'INVALID_INPUT');
+  }
+  if (trustedCiOrigins(env).has(origin)) return;
+  const host = new URL(ref.api).host;
+  throw new PlaywrightMcpError(`Not sending a CI token to ${host}: it is not a known GitHub or GitLab host`, 'INVALID_INPUT', {
+    hint: `Runs on github.com and gitlab.com work as they are. For your own GitHub Enterprise or GitLab server, add its host to PW_MCP_CI_HOSTS (e.g. PW_MCP_CI_HOSTS=${host}) where the MCP server starts. Or download the artifacts yourself and pass the folder.`,
+  });
+}
+
 function token(ref: CiRunRef): { header: Record<string, string> } {
+  assertTrustedApi(ref);
   if (ref.provider === 'github') {
     const value = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
     if (!value) {
@@ -60,9 +100,37 @@ function token(ref: CiRunRef): { header: Record<string, string> } {
   });
 }
 
+const MAX_REDIRECTS = 5;
+
+/**
+ * fetch, following redirects by hand: every hop passes the address guard,
+ * and the auth headers go only to the origin they were meant for (fetch
+ * strips Authorization on a cross-origin redirect, but not GitLab's
+ * PRIVATE-TOKEN / JOB-TOKEN, and artifact downloads redirect to storage).
+ */
+async function request(url: string, header: Record<string, string>, signal?: AbortSignal): Promise<Response> {
+  const authOrigin = new URL(url).origin;
+  let target = url;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+    await assertUrlAllowed(target);
+    const current = new URL(target);
+    const response = await fetch(target, { headers: current.origin === authOrigin ? header : {}, signal, redirect: 'manual' });
+    const location = response.headers.get('location');
+    if (response.status >= 300 && response.status < 400 && location) {
+      const next = new URL(location, target);
+      if (next.protocol !== current.protocol && next.protocol !== 'https:') {
+        throw new PlaywrightMcpError('The CI server redirected to a non-https address', 'REPORT_MISSING');
+      }
+      target = next.toString();
+      continue;
+    }
+    return response;
+  }
+  throw new PlaywrightMcpError('The CI server redirected too many times', 'REPORT_MISSING');
+}
+
 async function getJson<T>(url: string, header: Record<string, string>, signal?: AbortSignal): Promise<T> {
-  await assertUrlAllowed(url);
-  const response = await fetch(url, { headers: header, signal });
+  const response = await request(url, header, signal);
   if (!response.ok) {
     throw new PlaywrightMcpError(`CI API answered ${response.status} for ${url.replace(/\?.*$/, '')}`, 'REPORT_MISSING', {
       hint: response.status === 404 || response.status === 401 || response.status === 403 ? 'Check the URL and that the token can read this repository\'s Actions / CI artifacts.' : undefined,
@@ -72,10 +140,7 @@ async function getJson<T>(url: string, header: Record<string, string>, signal?: 
 }
 
 async function getBytes(url: string, header: Record<string, string>, signal?: AbortSignal): Promise<Buffer> {
-  await assertUrlAllowed(url);
-  // fetch drops the authorization header when the redirect leaves the API host,
-  // so the signed storage URL is fetched without our token.
-  const response = await fetch(url, { headers: header, signal, redirect: 'follow' });
+  const response = await request(url, header, signal);
   if (!response.ok) throw new PlaywrightMcpError(`Artifact download answered ${response.status}`, 'REPORT_MISSING');
   const size = Number(response.headers.get('content-length') ?? 0);
   if (size > MAX_DOWNLOAD_BYTES) throw new PlaywrightMcpError(`Artifact is too large (${Math.round(size / 1_000_000)} MB)`, 'REPORT_MISSING');
@@ -126,7 +191,7 @@ export async function fetchCiRun(ref: CiRunRef, root: string, signal?: AbortSign
     for (const artifact of picked) {
       total += artifact.size_in_bytes ?? 0;
       if (total > MAX_DOWNLOAD_BYTES) break;
-      // The token only ever goes to the API host the user's URL named.
+      // The token only ever goes to the trusted API origin, never to storage.
       const sameHost = new URL(artifact.archive_download_url).origin === new URL(ref.api).origin;
       const zip = await getBytes(artifact.archive_download_url, sameHost ? header : {}, signal);
       await unzipInto(zip, `${dir}/${artifact.name.replace(/[^\w.-]+/g, '_')}`);

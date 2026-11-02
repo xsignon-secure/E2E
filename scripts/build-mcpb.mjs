@@ -140,9 +140,12 @@ writeFileSync(path.join(stage, 'manifest.json'), `${JSON.stringify(buildManifest
 //    and no host-derived attributes, so the same tree always hashes the same.
 const epoch = Number(process.env.SOURCE_DATE_EPOCH ?? '') || DEFAULT_EPOCH;
 const members = ['manifest.json', 'dist', 'node_modules', 'package.json'];
-const files = members.flatMap((member) =>
-  statSync(path.join(stage, member)).isDirectory() ? listFiles(stage, member) : [member],
-);
+// node_modules/.bin holds npm's per-platform launchers (a symlink on POSIX,
+// .cmd/.ps1 shims on Windows). The server never runs them, and keeping them
+// would make the bundle differ between platforms.
+const files = members
+  .flatMap((member) => (statSync(path.join(stage, member)).isDirectory() ? listFiles(stage, member) : [member]))
+  .filter((file) => !file.startsWith('node_modules/.bin/'));
 const entries = files.map((file) => ({
   name: file,
   data: normaliseLineEndings(readFileSync(path.join(stage, file))),

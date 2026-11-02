@@ -21,9 +21,10 @@ src/server.ts ── registers the tools, picks a tool profile, wires progress +
    └─ src/utils/test-change-guard.ts   the heal guard
 ```
 
-There are three runtime dependencies: the MCP SDK, zod and axe-core. Playwright is not one of
-them: every run and every browser comes from the Playwright already installed in the user's
-project, so the version you test with is the version the server uses.
+There are four runtime dependencies: the MCP SDK, zod, axe-core and playwright-core. Test runs and
+page tools use the Playwright already installed in the user's project, so the version you test
+with is the version the server uses. playwright-core (no browsers of its own) is only the fallback
+for projects without Node Playwright, such as pytest-playwright suites and the Docker image.
 
 ## 1. Tool definitions cost tokens on every request
 

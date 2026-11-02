@@ -1096,8 +1096,8 @@ export async function runBrowserScript(
       ...config,
       blockPrivate: blockPrivateUrls(),
       blockedRanges: BLOCKED_RANGES,
-      // A pytest project has no Node Playwright of its own; the probe can
-      // then fall back to one installed next to this server.
+      // A pytest project has no Node Playwright of its own; the probe then
+      // falls back to the playwright-core this server depends on.
       serverRoot: SERVER_ROOT,
       ...(serverless ? { serverlessChromium: { executablePath: serverless.executablePath, args: serverless.args } } : {}),
     }),

@@ -105,6 +105,7 @@ async function main(): Promise<void> {
         '  PW_MCP_PYTHON              Python for pytest-playwright projects (default: project venv, python3)',
         '  PW_MCP_CONNECT             Remote browser for page tools: ws(s):// Playwright endpoint or cdp:<url>',
         '  GITHUB_TOKEN/GITLAB_TOKEN  Let load-report download a CI run from its URL',
+        '  PW_MCP_CI_HOSTS            GitHub Enterprise / GitLab hosts trusted with those tokens',
         '  PW_MCP_LOGIN_ENV           extra variables save-login may type ({{env:NAME}}), comma separated',
         '  PW_MCP_PROTOCOL            legacy = do not offer the 2026-07-28 MCP revision',
         '  PW_MCP_CONFIRM_WRITES      auto | always | off: ask before changing files (default auto)',
