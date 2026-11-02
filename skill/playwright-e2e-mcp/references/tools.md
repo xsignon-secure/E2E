@@ -80,7 +80,7 @@ becomes the last run for `get-failure`, `suggest-fix` and `diagnose-flaky`.
 | `har` | object | `{ path, mode?: replay\|record, url?, notFound?: abort\|fallback }` (0.5.0+): replay requests from a HAR inside the project, or record the traffic to one. `routes` still win |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Engine (0.5.0+, default chromium); must be installed |
 | `viewport` | object | `{ width, height }` |
-| `connect` | string | Remote browser (0.13.0+): `ws(s)://` Playwright server endpoint or `cdp:` + DevTools URL; `{{env:NAME}}` tokens allowed; default `PW_MCP_CONNECT` |
+| `connect` | string | Remote browser (0.13.0+): `ws(s)://` Playwright server endpoint or `cdp:` + DevTools URL; `{{env:NAME}}` tokens only to localhost, the `PW_MCP_CONNECT` host or `PW_MCP_CONNECT_HOSTS` (0.14.1+); default `PW_MCP_CONNECT` |
 
 Returns each element's Playwright locators proven unique on the page (role +
 name first), unique CSS selector, tag, visibility, box, text and attributes,

@@ -1,0 +1,44 @@
+# playwright-e2e-mcp on Bitbucket Pipelines.
+#
+# Copy this into bitbucket-pipelines.yml at the repository root. It:
+#   - on a pull request, runs the heal guard against the destination branch:
+#     the step fails when a changed test now checks less (an assertion
+#     removed, a test skipped, `.only`);
+#   - runs the suite with `ci` (auto-retry once, flaky verdicts, drafted fixes
+#     re-run with --verify-fixes) and keeps the reports as artifacts.
+#
+# Exit codes of `ci`: 0 passed (flaky allowed), 1 tests failed, 2 the run
+# itself failed (no Playwright, config error, timeout).
+
+# Ships Node and the browsers. Match the @playwright/test version in your
+# package-lock.json.
+image: mcr.microsoft.com/playwright:v1.64.1-noble
+
+clone:
+  depth: full # the guard compares with the destination branch, so it needs history
+
+definitions:
+  steps:
+    - step: &e2e
+        name: Playwright E2E
+        caches:
+          - node
+        script:
+          - npm ci
+          - |
+            if [ -n "$BITBUCKET_PR_DESTINATION_BRANCH" ]; then
+              git fetch --quiet origin "$BITBUCKET_PR_DESTINATION_BRANCH"
+              npx -y playwright-e2e-mcp guard --base "origin/$BITBUCKET_PR_DESTINATION_BRANCH"
+            fi
+          - npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+        artifacts:
+          - e2e-report.md
+          - playwright-report/**
+
+pipelines:
+  pull-requests:
+    '**':
+      - step: *e2e
+  branches:
+    main:
+      - step: *e2e

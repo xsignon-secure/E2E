@@ -64,7 +64,7 @@ out; results still carry the same fields.
 | `browser` | `chromium` \| `firefox` \| `webkit` | Browser engine (default `chromium`; the engine must be installed with `npx playwright install`). `audit-performance` is Chromium-only, and WebKit is refused while private addresses are blocked |
 | `device` | string | A Playwright device preset such as `iPhone 15`, `Pixel 7` or `iPad Pro 11`: its viewport, user agent, pixel ratio and touch. The engine stays `browser`'s (Firefox has no mobile emulation); `viewport` still overrides the size. An unknown name lists close matches |
 | `channel` | `chrome` \| `chrome-beta` \| `msedge` \| `msedge-beta` | Run the installed Google Chrome or Microsoft Edge instead of bundled Chromium (`npx playwright install chrome` or `msedge`). Chromium engine only; not on the hosted endpoint |
-| `connect` | string | Use a remote browser instead of launching one: a Playwright server endpoint `ws://…` / `wss://…` (`npx playwright run-server`, Browserless, Moon, a device cloud's Playwright endpoint), or `cdp:` + a Chrome DevTools URL (`cdp:http://localhost:9222`, Chromium only). `{{env:NAME}}` tokens are filled from the environment (`E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*`), so an access key never goes through chat. Defaults to `PW_MCP_CONNECT`. Not with `channel`; local server only |
+| `connect` | string | Use a remote browser instead of launching one: a Playwright server endpoint `ws://…` / `wss://…` (`npx playwright run-server`, Browserless, Moon, a device cloud's Playwright endpoint), or `cdp:` + a Chrome DevTools URL (`cdp:http://localhost:9222`, Chromium only). `{{env:NAME}}` tokens are filled from the environment (`E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*`), so an access key never goes through chat. A `connect` URL the agent passes may only carry `{{env:…}}` values to `localhost`, the host of `PW_MCP_CONNECT`, or a host listed in `PW_MCP_CONNECT_HOSTS`. Defaults to `PW_MCP_CONNECT`. Not with `channel`; local server only |
 
 Mocks make states that are hard to reach easy to inspect, audit or measure: the error
 banner after a 500, the empty list, the spinner of a slow API, the page without a
@@ -689,7 +689,8 @@ every mock in the test files (TypeScript, JavaScript and pytest-playwright):
 
 - `page.route(…, route => route.fulfill({ json: … }))`, `body: JSON.stringify(…)` and
   `path: 'fixtures/cart.json'`, with the handler inline or a named function in the same file
-  (Python: `route.fulfill(json=…)` and `body=json.dumps(…)`);
+  (Python: `route.fulfill(json=…)` and `body=json.dumps(…)`); a JSON body written as a string
+  literal (`body='{"id": 1}'`, triple-quoted, or a JS template literal without `${…}`) is read too;
 - `routeFromHAR('fixtures/api.har')` / `route_from_har(…)`: each GET entry with a JSON response.
 
 It then GETs each mocked endpoint on the live server and compares the JSON **shapes** (field

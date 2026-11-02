@@ -12,14 +12,18 @@ test('connect: ws endpoints, cdp URLs, env tokens and refusals', () => {
     const cdp = resolveConnect('cdp:http://127.0.0.1:9222', {});
     assert.equal(cdp.cdp, true);
     assert.equal(cdp.url, 'http://127.0.0.1:9222');
+    // 0.14.1: secrets only go to hosts the user named.
+    assert.throws(() => resolveConnect('wss://grid.example.com/pw?key={{env:E2E_GRID_KEY}}', {}), /Not sending/);
+    process.env.PW_MCP_CONNECT_HOSTS = 'grid.example.com';
     assert.equal(resolveConnect('wss://grid.example.com/pw?key={{env:E2E_GRID_KEY}}', {}).url, 'wss://grid.example.com/pw?key=s3cret');
     assert.equal(resolveConnect(undefined, {}), undefined);
     assert.throws(() => resolveConnect('http://localhost:3000', {}), /ws:\/\/ or wss:\/\//);
     assert.throws(() => resolveConnect('not a url', {}), /not a valid URL/);
     assert.throws(() => resolveConnect('ws://localhost:3000', { restricted: true }), /not available/);
-    assert.throws(() => resolveConnect('wss://x/?k={{env:AWS_SECRET_ACCESS_KEY}}', {}), /not an allowed variable/);
+    assert.throws(() => resolveConnect('ws://localhost:3000/?k={{env:AWS_SECRET_ACCESS_KEY}}', {}), /not an allowed variable/);
   } finally {
     delete process.env.E2E_GRID_KEY;
+    delete process.env.PW_MCP_CONNECT_HOSTS;
   }
 });
 

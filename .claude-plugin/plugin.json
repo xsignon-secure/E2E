@@ -1,7 +1,7 @@
 {
   "name": "playwright-e2e-mcp",
   "displayName": "Playwright E2E (diagnose & fix)",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "description": "Diagnose and fix failing Playwright tests (TypeScript and pytest-playwright): trace analysis, verified locator fixes, per-test flaky verdicts, a heal guard. Adds the playwright-e2e MCP server and the playwright-e2e-mcp skill.",
   "author": { "name": "xsignon-secure", "url": "https://github.com/xsignon-secure" },
   "homepage": "https://github.com/xsignon-secure/E2E",

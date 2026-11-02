@@ -402,6 +402,48 @@ function handlerBody(src: string, name: string, python: boolean): string | undef
   return end < 0 ? undefined : src.slice(def.index, end + 1);
 }
 
+/**
+ * A JSON body written as a string literal: Python `body='{"id": 1}'` (also
+ * triple-quoted and r-strings) or JS `body: '{"id": 1}'` / a template literal
+ * without substitutions. Undefined when it is not a literal or not JSON.
+ */
+export function jsonFromStringLiteral(src: string, start: number): Literal | undefined {
+  let i = start;
+  let raw = false;
+  while (i < src.length && /[rRbBuU]/.test(src[i])) {
+    if (/[rR]/.test(src[i])) raw = true;
+    i += 1;
+  }
+  const quote = src[i];
+  if (quote !== '"' && quote !== "'" && quote !== '`') return undefined;
+  const triple = quote !== '`' && src.startsWith(quote.repeat(3), i);
+  const close = triple ? quote.repeat(3) : quote;
+  i += close.length;
+  let text = '';
+  while (i < src.length) {
+    if (src.startsWith(close, i)) {
+      try {
+        return JSON.parse(text) as Literal;
+      } catch {
+        return undefined;
+      }
+    }
+    const ch = src[i];
+    if (quote === '`' && ch === '$' && src[i + 1] === '{') return undefined;
+    if (!triple && quote !== '`' && ch === '\n') return undefined;
+    if (ch === '\\' && !raw) {
+      const next = src[i + 1];
+      const map: Record<string, string> = { n: '\n', t: '\t', r: '\r', '"': '"', "'": "'", '\\': '\\', '`': '`' };
+      text += map[next] ?? `\\${next}`;
+      i += 2;
+      continue;
+    }
+    text += ch;
+    i += 1;
+  }
+  return undefined;
+}
+
 /** Read status, method and body from the handler of one route. */
 function readHandler(handler: string, python: boolean): Pick<FoundMock, 'status' | 'body' | 'bodyFile' | 'method'> | undefined {
   const fulfill = /\.fulfill\s*\(/.exec(handler);
@@ -416,8 +458,10 @@ function readHandler(handler: string, python: boolean): Pick<FoundMock, 'status'
   const json = new RegExp(`\\bjson\\s*${sep}\\s*`).exec(args);
   const stringified = python ? /\bbody\s*=\s*json\.dumps\s*\(/.exec(args) : /\bbody\s*:\s*JSON\.stringify\s*\(/.exec(args);
   const file = new RegExp(`\\bpath\\s*${sep}\\s*(['"])([^'"]+\\.json)\\1`).exec(args);
+  const rawBody = new RegExp(`\\bbody\\s*${sep}\\s*(?=[rRbBuU]?['"\`])`).exec(args);
   if (json) out.body = parseLiteral(args, json.index + json[0].length);
   else if (stringified) out.body = parseLiteral(args, stringified.index + stringified[0].length);
+  else if (rawBody) out.body = jsonFromStringLiteral(args, rawBody.index + rawBody[0].length);
   else if (file) out.bodyFile = file[2];
   const method = /\.method(?:\(\))?\s*(===|==)\s*(['"])([A-Za-z]+)\2/.exec(handler) ?? /(['"])([A-Za-z]+)\1\s*(===|==)\s*[\w.]*\.method/.exec(handler);
   if (method) out.method = (method[3] && /^[A-Za-z]+$/.test(method[3]) ? method[3] : method[2]).toUpperCase();

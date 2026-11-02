@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Playwright E2E diagnosis action
         id: e2e
-        uses: xsignon-secure/E2E@v0.14.0
+        uses: xsignon-secure/E2E@v0.14.1
         with:
           # Directory containing playwright.config.* (default is workspace root)
           project-root: .

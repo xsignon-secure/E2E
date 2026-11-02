@@ -276,16 +276,40 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks, size);
 }
 
+/**
+ * The caller's address for the sign-in limiter, given PW_MCP_TRUST_PROXY.
+ *
+ * - unset / `0`: the socket address; client headers are ignored.
+ * - `1` … `N`: N reverse proxies append to X-Forwarded-For. The entry the
+ *   nearest trusted proxy added is the Nth from the RIGHT; anything left of
+ *   it was sent by the client and can be forged, so the leftmost entry is
+ *   never used. With fewer entries than proxies, the socket address is used.
+ * - `x-real-ip`: one proxy that overwrites X-Real-IP (nginx
+ *   `proxy_set_header X-Real-IP $remote_addr`) and does not append to
+ *   X-Forwarded-For. Without the header, the socket address is used.
+ */
+export function trustedClientAddress(headers: Headers, socketAddress: string, trustProxy: string | undefined): string {
+  const mode = (trustProxy ?? '').trim().toLowerCase();
+  if (mode === 'x-real-ip') return headers.get('x-real-ip')?.trim() || socketAddress;
+  const hops = /^\d+$/.test(mode) ? Math.min(Number(mode), 32) : 0;
+  if (hops === 0) return socketAddress;
+  const chain = (headers.get('x-forwarded-for') ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return chain.length >= hops ? chain[chain.length - hops] : socketAddress;
+}
+
 function buildRequest(req: IncomingMessage, method: string, body: Buffer | undefined, signal: AbortSignal): Request {
   const protocol = (firstHeader(req.headers['x-forwarded-proto']) ?? 'http').split(',')[0].trim();
   const host = firstHeader(req.headers.host) ?? 'localhost';
   const headers = toHeaders(req.headers);
-  // Vercel sets x-real-ip itself, and PW_MCP_TRUST_PROXY=1 says a reverse
-  // proxy in front does. Otherwise a caller could forge it, so the socket's
-  // address replaces it before the sign-in limiter reads it.
-  if (!process.env.VERCEL && process.env.PW_MCP_TRUST_PROXY !== '1') {
+  // The sign-in limiter reads x-real-ip only, so settle the caller's address
+  // here, where the socket is known. Vercel sets x-real-ip itself.
+  if (!process.env.VERCEL) {
+    const caller = trustedClientAddress(headers, req.socket?.remoteAddress ?? 'unknown', process.env.PW_MCP_TRUST_PROXY);
     headers.delete('x-forwarded-for');
-    headers.set('x-real-ip', req.socket?.remoteAddress ?? 'unknown');
+    headers.set('x-real-ip', caller);
   }
   const init: RequestInit = { method, headers, signal };
   if (body && body.byteLength > 0) init.body = body;
