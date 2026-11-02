@@ -12,6 +12,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { PackageManager, ProjectDetection } from '../types/index.js';
 import { isTestFile, normalizePath, resolvePath } from './path-utils.js';
+import { isPythonTestFile } from './flake-rules-python.js';
 
 const CONFIG_FILES = [
   'playwright.config.ts',
@@ -35,6 +36,9 @@ const IGNORED_DIRS = new Set([
   '.next',
   '.cache',
   '.turbo',
+  '__pycache__',
+  'venv',
+  'site-packages',
 ]);
 
 const LOCKFILES: Array<{ file: string; pm: PackageManager }> = [
@@ -250,6 +254,8 @@ export interface FindTestFilesOptions {
   testDir?: string | null;
   maxDepth?: number;
   limit?: number;
+  /** Find pytest modules (test_*.py, *_test.py) instead of TS/JS specs. */
+  python?: boolean;
 }
 
 /**
@@ -279,7 +285,7 @@ export async function findTestFiles(
       if (entry.isDirectory()) {
         if (IGNORED_DIRS.has(entry.name)) continue;
         await walk(full, depth + 1);
-      } else if (entry.isFile() && isTestFile(entry.name)) {
+      } else if (entry.isFile() && (options.python ? isPythonTestFile(entry.name) : isTestFile(entry.name))) {
         const relative = full.slice(normalizedRoot.endsWith('/') ? normalizedRoot.length : normalizedRoot.length + 1);
         results.push(normalizePath(relative));
       }

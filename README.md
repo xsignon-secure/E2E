@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.14.1` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.14.1/playwright-e2e-mcp-0.14.1.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.15.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.15.0/playwright-e2e-mcp-0.15.0.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -448,7 +448,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.14.1
+  - uses: xsignon-secure/E2E@v0.15.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -496,12 +496,21 @@ When the project has no Node Playwright but has pytest settings (`pytest.ini`, `
 - **`list-tests`**, **`analyze-history`**, **`quarantine`** and the **`ci`** command work as for Node.
 - **`check-test-change`** (the heal guard) reads `test_*.py` files: deleted `assert`s and
   `expect`s, `@pytest.mark.skip` / `xfail`, `try: … except: pass` around an assertion, weaker
-  matchers, `wait_for_timeout`, `force=True`. **`check-mocks`** reads `route.fulfill(json=…)`.
+  matchers, `wait_for_timeout`, `force=True`. **`check-mocks`** reads `route.fulfill(json=…)`,
+  `body=json.dumps(…)` and `body='{…}'`.
 - **`suggest-fix`** patches `.py` files too: the new locator is written in Python syntax
   (`get_by_role("button", name="Buy")`) and verified with a pytest re-run. It checks the locator on
   the DOM at failure with Node Playwright, like the page tools.
-- Not yet for Python: **`diagnose-flaky`** says so and suggests re-running, and **`audit-tests`** and
-  **`generate-e2e-test`** read and write TypeScript/JavaScript specs only.
+- **`diagnose-flaky`** repeats pytest tests (one pytest process per run) for the same per-test
+  verdicts. `isolate: true` runs them in parallel with pytest-xdist (`-n`) first, then alone.
+  `order` needs Playwright's shuffle and is Node only.
+- **`audit-tests`** reads `test_*.py` / `*_test.py` with Python rules: `wait_for_timeout`,
+  `time.sleep`, one-shot `assert loc.is_visible()` (rewritten to `expect(loc).to_be_visible()`
+  with `fix: true`), un-awaited calls in `async def` tests, `force=True`, `networkidle`,
+  `query_selector`, layout selectors, `timeout=0`.
+- **`generate-e2e-test`** writes `tests/generated/test_<name>.py` with Python locators. With
+  `steps` it walks the flow, writes the module and runs it once with pytest. The start URL comes
+  from `pageUrl` or `base_url` in your pytest config (pytest-base-url).
 - The page tools and `suggest-fix` drive the browser with Node Playwright. A Python project needs
   nothing extra: the server brings its own `playwright-core`. If it reports a missing browser,
   run the command it gives once (`npx -y playwright@<version> install chromium`).
@@ -627,6 +636,9 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.15:** pytest-playwright suites get `diagnose-flaky` (with pytest-xdist for `isolate`),
+  `audit-tests` (Python flake rules and `expect(...)` rewrites) and `generate-e2e-test`
+  (writes and verifies `test_*.py`). `-n` runs no longer count each pytest result twice.
 - **0.14.1:** security fix: behind a reverse proxy the sign-in limit can no longer be dodged
   with a forged `X-Forwarded-For`; `{{env:…}}` secrets in an agent-chosen `connect` URL only go
   to hosts you named. CI templates for Azure DevOps, CircleCI, Bitbucket and AWS CodeBuild, and

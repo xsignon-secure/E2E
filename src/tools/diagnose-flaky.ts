@@ -28,7 +28,8 @@ import type {
 } from '../types/index.js';
 import { detectProject, missingPlaywrightMessage } from '../utils/project-detector.js';
 import { runTests } from '../utils/playwright-runner.js';
-import { detectPytestProject } from '../utils/pytest-runner.js';
+import { detectPytestProject, resolvePython } from '../utils/pytest-runner.js';
+import { childEnv, runProcess } from '../utils/playwright-runner.js';
 import { relativeToRoot } from '../utils/path-utils.js';
 import { recordRun } from '../utils/run-history.js';
 import { classifyFailure } from '../utils/report-parser.js';
@@ -521,6 +522,8 @@ interface PassOptions {
   args: DiagnoseFlakyInput;
   ctx: ToolContext;
   label: string;
+  /** A pytest-playwright project: one pytest process per run, workers via pytest-xdist. */
+  pytest?: boolean;
   /** Progress slots already used and the total, so two passes share one bar. */
   progressOffset: number;
   progressTotal: number;
@@ -543,8 +546,9 @@ async function runPass(options: PassOptions): Promise<PassResult> {
       testFiles: options.targets,
       browser: args.browser,
       headed: args.headed,
-      workers: options.workers,
-      fullyParallel: options.fullyParallel,
+      ...(options.pytest
+        ? { extraArgs: options.workers !== undefined && options.workers > 1 ? [`-n=${options.workers}`] : [] }
+        : { workers: options.workers, fullyParallel: options.fullyParallel }),
       repeatEach: options.separateProcesses ? undefined : options.runs,
       timeoutMs: options.separateProcesses ? perRunTimeout : Math.min(perRunTimeout * options.runs, 3_600_000),
       retries: 0,
@@ -554,7 +558,7 @@ async function runPass(options: PassOptions): Promise<PassResult> {
     });
     const repetitions = !options.separateProcesses && result.attempts?.length ? splitRepetitions(result, result.attempts) : [result];
     for (const repetition of repetitions) await recordRun(root, repetition, 'diagnose-flaky').catch(() => undefined);
-    attempts.push(...(result.attempts ?? []));
+    attempts.push(...(options.pytest ? attemptsFromOutcomes(result, i) : (result.attempts ?? [])));
     runs.push({ ...runOutcome(result), result });
     const done = options.separateProcesses ? i + 1 : options.runs;
     ctx.progress?.(
@@ -566,6 +570,24 @@ async function runPass(options: PassOptions): Promise<PassResult> {
   }
 
   return { tests: groupAttempts(attempts), runs, durationMs: Date.now() - startedAt };
+}
+
+/**
+ * pytest has no per-attempt reporter: each run is its own process, so every
+ * test's final outcome in run `index` is that repetition's attempt.
+ */
+export function attemptsFromOutcomes(result: RunTestResult, index: number): TestAttempt[] {
+  return (result.outcomes ?? []).map((o) => ({
+    file: o.file,
+    ...(o.line !== undefined ? { line: o.line } : {}),
+    title: o.title,
+    ...(o.project ? { project: o.project } : {}),
+    repeatEachIndex: index,
+    retry: 0,
+    status: o.status,
+    durationMs: o.durationMs ?? 0,
+    ...(o.message ? { message: o.message } : {}),
+  }));
 }
 
 /**
@@ -608,6 +630,14 @@ export function splitRepetitions(result: RunTestResult, attempts: TestAttempt[])
     });
 }
 
+/** True when `import <name>` works in the project's Python. */
+async function hasPythonModule(root: string, name: string): Promise<boolean> {
+  const python = await resolvePython(root).catch(() => undefined);
+  if (!python) return false;
+  const outcome = await runProcess(python, ['-c', `import ${name}`], { cwd: root, env: childEnv(), timeoutMs: 20_000 }).catch(() => undefined);
+  return outcome?.code === 0;
+}
+
 function failingTargets(pass: PassResult): string[] {
   return [
     ...new Set(
@@ -618,7 +648,11 @@ function failingTargets(pass: PassResult): string[] {
   ];
 }
 
-function modeLine(pass: PassResult, options: { runs: number; separateProcesses: boolean; workers?: number; fullyParallel?: boolean }): string {
+function modeLine(pass: PassResult, options: { runs: number; separateProcesses: boolean; workers?: number; fullyParallel?: boolean; pytest?: boolean }): string {
+  if (options.pytest) {
+    const xdist = options.workers !== undefined && options.workers > 1 ? `, \`-n ${options.workers}\` (pytest-xdist)` : '';
+    return `**Mode:** ${options.runs} separate pytest runs${xdist}; reruns disabled so each run is honest evidence. Took ${formatDuration(pass.durationMs)}.`;
+  }
   const how = options.separateProcesses
     ? `${options.runs} separate Playwright processes`
     : `one Playwright process with \`--repeat-each=${options.runs}\``;
@@ -723,21 +757,29 @@ async function orderPass(options: {
 export const diagnoseFlakyTool = {
   name: 'diagnose-flaky',
   description:
-    'Repeat failing tests with retries disabled and return a per-test, evidence-based verdict: CONSISTENTLY FAILING (real bug), FLAKY (pass/fail counts, error-signature variance, duration spread) or NOT REPRODUCING. Runs all repetitions in one process by default. `isolate: true` also re-runs the failures with one worker to tell parallelism bugs (shared state) from flakiness inside the test; `order: true` (Playwright 1.64+) runs the files in random orders to catch tests that depend on what ran before them. Defaults to the tests that failed in the most recent run.',
+    'Repeat failing tests (Playwright or pytest-playwright) with retries disabled and return a per-test, evidence-based verdict: CONSISTENTLY FAILING (real bug), FLAKY (pass/fail counts, error-signature variance, duration spread) or NOT REPRODUCING. Runs all repetitions in one process by default. `isolate: true` also re-runs the failures with one worker to tell parallelism bugs (shared state) from flakiness inside the test; `order: true` (Playwright 1.64+) runs the files in random orders to catch tests that depend on what ran before them. Defaults to the tests that failed in the most recent run.',
   inputSchema: diagnoseFlakySchema,
   handler: async (args: DiagnoseFlakyInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('diagnose-flaky', async () => {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       const detection = await detectProject(root);
 
-      if (!detection.hasPlaywright && (await detectPytestProject(root))) {
+      const pytest = !detection.hasPlaywright && (await detectPytestProject(root)) !== null;
+      if (pytest && args.order === true) {
         return toolError(
           'INVALID_INPUT',
-          'diagnose-flaky does not support pytest projects yet',
-          'Re-run the test a few times with run-test (or pytest-repeat: `--count 5`) and compare the outcomes; analyze-history ranks flaky tests from those runs.',
+          'order is not available for pytest projects',
+          'pytest has no built-in shuffle. Install pytest-randomly and re-run with run-test a few times to look for order dependence; diagnose-flaky without order and isolate: true still separate flakiness from parallelism.',
         );
       }
-      if (!detection.hasPlaywright) {
+      if (pytest && args.isolate === true && !(await hasPythonModule(root, 'xdist'))) {
+        return toolError(
+          'INVALID_INPUT',
+          'isolate needs pytest-xdist in a pytest project',
+          'Install it (`pip install pytest-xdist`) so the tests can run in parallel first, or call diagnose-flaky without isolate.',
+        );
+      }
+      if (!detection.hasPlaywright && !pytest) {
         const { message, hint } = missingPlaywrightMessage(detection);
         return toolText([`## Flaky diagnosis unavailable`, '', `**Error:** ${message}`, '', `> ${hint}`].join('\n'), {
           ok: false,
@@ -745,7 +787,7 @@ export const diagnoseFlakyTool = {
         });
       }
 
-      const configPath = resolveConfigSelection(detection, args.config);
+      const configPath = pytest ? undefined : resolveConfigSelection(detection, args.config);
 
       // Target set: explicit, or the failures of the most recent run.
       let target = args.testFiles ?? [];
@@ -780,7 +822,8 @@ export const diagnoseFlakyTool = {
       }
 
       const runsRequested = args.runs ?? 3;
-      const separateProcesses = args.separateProcesses === true;
+      // pytest cannot repeat inside one process (no --repeat-each), so each run is its own.
+      const separateProcesses = pytest || args.separateProcesses === true;
       const isolate = args.isolate === true;
       const parallelWorkers = isolate ? (args.workers ?? 4) : args.workers;
       const progressTotal = isolate ? runsRequested * 2 : runsRequested;
@@ -796,6 +839,7 @@ export const diagnoseFlakyTool = {
         args,
         ctx,
         label: isolate ? 'parallel' : 'diagnosis',
+        pytest,
         progressOffset: 0,
         progressTotal,
       });
@@ -813,6 +857,7 @@ export const diagnoseFlakyTool = {
           args,
           ctx,
           label: 'isolated',
+          pytest,
           progressOffset: runsRequested,
           progressTotal,
         });
@@ -854,7 +899,7 @@ export const diagnoseFlakyTool = {
       const lines: string[] = [
         `## Flaky diagnosis — ${shown.map((t) => `\`${t}\``).join(', ')} × ${runsRequested} runs`,
         '',
-        modeLine(main, { runs: runsRequested, separateProcesses, workers: parallelWorkers, fullyParallel: isolate }),
+        modeLine(main, { runs: runsRequested, separateProcesses, workers: parallelWorkers, fullyParallel: isolate, pytest }),
         '',
       ];
       if (main.tests.length > 0) lines.push(...renderPerTest(main));
@@ -866,7 +911,12 @@ export const diagnoseFlakyTool = {
       lines.push(...(await hydrationClues(main)));
 
       if (isolate) {
-        lines.push(`### Parallel vs alone (\`--workers=${parallelWorkers}\` fully parallel → \`--workers=1\`)`, '');
+        lines.push(
+          pytest
+            ? `### Parallel vs alone (\`-n ${parallelWorkers}\` → one process)`
+            : `### Parallel vs alone (\`--workers=${parallelWorkers}\` fully parallel → \`--workers=1\`)`,
+          '',
+        );
         if (!alone) {
           lines.push(
             main.tests.length === 0

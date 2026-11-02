@@ -12,7 +12,10 @@ import { z } from 'zod';
 import { readFile, stat } from 'node:fs/promises';
 import { PlaywrightMcpError } from '../types/index.js';
 import type { RunTestResult, ToolContext, ToolResponse } from '../types/index.js';
-import { formatLocator, quote } from '../utils/locator-expr.js';
+import { formatLocator, parseLocator, quote } from '../utils/locator-expr.js';
+import { formatPythonLocator } from '../utils/python-locator.js';
+import { isPythonTestFile } from '../utils/flake-rules-python.js';
+import { detectPytestProject } from '../utils/pytest-runner.js';
 import { runTests } from '../utils/playwright-runner.js';
 import type { ElementInfo } from '../types/index.js';
 import { detectProject } from '../utils/project-detector.js';
@@ -61,7 +64,7 @@ const generateInput = z.object({
   file: z
     .string()
     .optional()
-    .describe('Exact spec path (*.spec.ts / *.test.ts) inside the project instead of the default location'),
+    .describe('Exact spec path (*.spec.ts / *.test.ts, or test_*.py in a pytest project) inside the project instead of the default location'),
   write: z.boolean().optional().describe('Write the file to disk (default true)'),
   overwrite: z
     .boolean()
@@ -309,6 +312,185 @@ export function endStateAssertions(options: { entryUrl: string; finalUrl?: strin
   return out;
 }
 
+/* ------------------------------------------------------------------ */
+/* pytest-playwright output                                            */
+/* ------------------------------------------------------------------ */
+
+/** A Python string literal (JSON's escapes are valid Python). */
+function pyStr(value: string): string {
+  return JSON.stringify(value);
+}
+
+/** `test_<words>` from a description. */
+export function pythonTestName(description: string): string {
+  return `test_${slugify(description).replace(/-/g, '_')}`;
+}
+
+/** A TS locator expression (`getByRole('button', …)`) in Python, or undefined. */
+export function toPythonLocator(tsLocator: string): string | undefined {
+  try {
+    return formatPythonLocator(parseLocator(tsLocator));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The header comment every generated pytest module carries. */
+function pythonHeader(description: string, note: string[]): string[] {
+  return [`# ${GENERATED_MARKER} "${commentText(description)}"`, ...note.map((line) => `# ${line}`)];
+}
+
+export function buildPythonSpec(options: {
+  description: string;
+  entryUrl?: string;
+  selectors: SelectorCandidate[];
+  live?: Array<{ locator: string; role?: string; name?: string }>;
+}): string {
+  const body: string[] = [];
+  if (options.entryUrl) body.push(`    page.goto(${pyStr(options.entryUrl)})`);
+  else body.push('    # No base_url found (pytest-base-url): set the start URL.', '    page.goto("/")');
+  body.push('');
+  const live = options.live ?? [];
+  const emit = (tsLocator: string, fill: boolean, click: boolean, note?: string): void => {
+    const py = toPythonLocator(tsLocator);
+    if (note) body.push(`    # ${commentText(note)}`);
+    if (!py) {
+      body.push(`    # ${commentText(tsLocator)} (convert by hand)`, '');
+      return;
+    }
+    body.push(`    expect(page.${py}).to_be_visible()`);
+    if (fill) body.push(`    # page.${py}.fill("…")`);
+    else if (click) body.push(`    # page.${py}.click()`);
+    body.push('');
+  };
+  if (options.selectors.length === 0 && live.length > 0) {
+    body.push('    # Locators below were verified unique on the live page (role + accessible name first).');
+    for (const entry of live) {
+      const role = entry.role ?? '';
+      emit(entry.locator, ['textbox', 'searchbox', 'combobox'].includes(role), ['button', 'link', 'checkbox', 'radio'].includes(role));
+    }
+  } else if (options.selectors.length === 0) {
+    body.push(
+      '    # No selectors could be discovered from recent changes.',
+      '    # Add data-testid attributes to the components, then re-run',
+      '    # generate-e2e-test, or use inspect-page to read the live DOM:',
+      '    #   expect(page.get_by_test_id("your-test-id")).to_be_visible()',
+    );
+  } else {
+    for (const candidate of options.selectors) {
+      emit(candidate.locator, ['name', 'placeholder', 'aria'].includes(candidate.kind), false, `${candidate.kind} · ${candidate.file}:${candidate.line}`);
+    }
+  }
+  while (body.length > 0 && body[body.length - 1] === '') body.pop();
+  return [
+    'from playwright.sync_api import Page, expect',
+    '',
+    ...pythonHeader(options.description, ['Selectors below come from the project source (recent changes).', 'Review the flow, then run it with the run-test tool.']),
+    '',
+    '',
+    `def ${pythonTestName(options.description)}(page: Page):`,
+    ...body,
+    '',
+  ].join('\n');
+}
+
+/** One walked step as pytest-playwright code. */
+export function pythonStepCode(action: NonNullable<ResolvedPageState['actions']>[number]): string {
+  const target = action.locator ? `page.${formatPythonLocator(action.locator)}` : undefined;
+  switch (action.type) {
+    case 'goto':
+      return `page.goto(${pyStr(action.url ?? '/')})`;
+    case 'fill':
+      return `${target}.fill(${pyStr(action.value ?? '')})`;
+    case 'press':
+      return target ? `${target}.press(${pyStr(action.value ?? '')})` : `page.keyboard.press(${pyStr(action.value ?? '')})`;
+    case 'select':
+      return `${target}.select_option(${pyStr(action.value ?? '')})`;
+    case 'wait':
+      return target ? `expect(${target}.first).to_be_visible()` : `page.wait_for_timeout(${Math.min(action.ms ?? 500, 10_000)})`;
+    default:
+      return `${target}.${action.type}()`;
+  }
+}
+
+const TRIPLE = '"""';
+
+/** End-state assertions in Python: URL path and aria snapshot (or headings). */
+export function pythonEndStateAssertions(options: { entryUrl: string; finalUrl?: string; snapshot?: string; scope?: string }): { lines: string[]; usesRe: boolean } {
+  const out: string[] = [];
+  let usesRe = false;
+  if (options.finalUrl && options.finalUrl !== options.entryUrl) {
+    try {
+      const final = new URL(options.finalUrl);
+      out.push(`    expect(page).to_have_url(re.compile(${pyStr(`${regexLiteral(final.pathname)}(?:[?#]|$)`)}))`);
+      usesRe = true;
+    } catch {
+      /* not a URL: skip */
+    }
+  }
+  const snapshot = options.snapshot?.trim();
+  if (!snapshot) return { lines: out, usesRe };
+  const lines = snapshot.split('\n');
+  if (lines.length <= MAX_SNAPSHOT_LINES) {
+    const body = snapshot
+      .replace(/\\/g, '\\\\')
+      .replace(/"""/g, '\\"\\"\\"')
+      .split('\n')
+      .map((line) => `        ${line}`)
+      .join('\n');
+    out.push(`    expect(page.locator(${pyStr(options.scope ?? 'body')})).to_match_aria_snapshot(${TRIPLE}`, body, `    ${TRIPLE})`);
+    return { lines: out, usesRe };
+  }
+  const headings = lines
+    .map((line) => /- heading "((?:[^"\\]|\\.)*)"/.exec(line)?.[1])
+    .filter((name): name is string => name !== undefined && name !== '')
+    .slice(0, 3);
+  for (const name of headings) out.push(`    expect(page.get_by_role("heading", name=${pyStr(name.replace(/\\"/g, '"'))})).to_be_visible()`);
+  return { lines: out, usesRe };
+}
+
+export function buildPythonWalkSpec(options: {
+  description: string;
+  entryUrl: string;
+  steps: NonNullable<ResolvedPageState['actions']>;
+  storageState?: string;
+  assertions: { lines: string[]; usesRe: boolean };
+}): string {
+  const imports = [
+    ...(options.assertions.usesRe ? ['import re', ''] : []),
+    ...(options.storageState ? ['import pytest'] : []),
+    'from playwright.sync_api import Page, expect',
+  ];
+  return [
+    ...imports,
+    '',
+    ...pythonHeader(options.description, [
+      'Every step was run on the live page before this file was written, and',
+      'the end-state assertions were captured from where the flow landed.',
+    ]),
+    ...(options.storageState
+      ? ['', '', '@pytest.fixture', 'def browser_context_args(browser_context_args):', `    return {**browser_context_args, "storage_state": ${pyStr(options.storageState)}}`]
+      : []),
+    '',
+    '',
+    `def ${pythonTestName(options.description)}(page: Page):`,
+    `    page.goto(${pyStr(options.entryUrl)})`,
+    ...options.steps.map((step) => `    ${pythonStepCode(step)}`),
+    ...(options.assertions.lines.length > 0 ? ['', '    # End state', ...options.assertions.lines] : []),
+    '',
+  ].join('\n');
+}
+
+/** base_url from pytest.ini / pyproject.toml / setup.cfg / tox.ini (pytest-base-url). */
+export async function pytestBaseUrl(root: string): Promise<string | undefined> {
+  for (const name of ['pytest.ini', 'pyproject.toml', 'setup.cfg', 'tox.ini']) {
+    const text = await readFile(resolvePath(root, name), 'utf8').catch(() => '');
+    const hit = /^\s*base_url\s*=\s*["']?(https?:\/\/[^\s"']+)/m.exec(text);
+    if (hit) return hit[1];
+  }
+  return undefined;
+}
+
 export function buildWalkSpec(options: {
   description: string;
   entryUrl: string;
@@ -345,6 +527,7 @@ async function prepareTarget(
   args: GenerateE2ETestInput,
   root: string,
   testDir: string | undefined,
+  python = false,
 ): Promise<string> {
   let targetPath: string;
   if (args.file) {
@@ -355,9 +538,16 @@ async function prepareTarget(
       : testDir
         ? normalizePath(testDir)
         : resolvePath(root, 'tests');
-    targetPath = resolvePath(dir, `generated/${slugify(args.description)}.spec.ts`);
+    targetPath = resolvePath(dir, python ? `generated/${pythonTestName(args.description)}.py` : `generated/${slugify(args.description)}.spec.ts`);
   }
-  if (!isTestFile(targetPath)) {
+  if (python && !isPythonTestFile(targetPath)) {
+    throw new PlaywrightMcpError(
+      `Generated tests must be pytest modules, got ${relativeToRoot(root, targetPath)}`,
+      'INVALID_PATH',
+      { hint: 'Use a name like "tests/test_checkout.py" (test_*.py or *_test.py).' },
+    );
+  }
+  if (!python && !isTestFile(targetPath)) {
     throw new PlaywrightMcpError(
       `Generated tests must be spec files, got ${relativeToRoot(root, targetPath)}`,
       'INVALID_PATH',
@@ -389,7 +579,7 @@ async function prepareTarget(
     // The marker must be the generated header line, not just text
     // that appears somewhere in a hand-written file.
     const header = current.split(/\r?\n/, 8);
-    if (!header.some((line) => line.startsWith(` * ${GENERATED_MARKER} "`))) {
+    if (!header.some((line) => line.startsWith(` * ${GENERATED_MARKER} "`) || line.startsWith(`# ${GENERATED_MARKER} "`))) {
       throw new PlaywrightMcpError(
         `Refusing to overwrite ${relativeToRoot(root, targetPath)}: it was not generated by this tool`,
         'INVALID_PATH',
@@ -412,6 +602,7 @@ async function walkFlow(
   entryUrl: string,
   configPath: string | undefined,
   testDir: string | undefined,
+  python = false,
 ): Promise<ToolResponse> {
   const state = await resolvePageState({ actions: args.steps, storageState: args.storageState }, root, entryUrl, ctx);
   const steps = state.actions ?? [];
@@ -449,14 +640,16 @@ async function walkFlow(
   }
   const data = outcome.data!;
   const storageState = state.storageState ? relativeToRoot(root, state.storageState) : undefined;
-  const assertions = endStateAssertions({ entryUrl, finalUrl: data.finalUrl, snapshot: data.ariaTruncated ? undefined : data.ariaSnapshot, scope: args.assertScope });
-  const spec = buildWalkSpec({ description: args.description, entryUrl, steps, storageState, assertions });
+  const endState = { entryUrl, finalUrl: data.finalUrl, snapshot: data.ariaTruncated ? undefined : data.ariaSnapshot, scope: args.assertScope };
+  const spec = python
+    ? buildPythonWalkSpec({ description: args.description, entryUrl, steps, storageState, assertions: pythonEndStateAssertions(endState) })
+    : buildWalkSpec({ description: args.description, entryUrl, steps, storageState, assertions: endStateAssertions(endState) });
 
   const lines: string[] = [`## 🧪 Walked and generated — "${args.description}"`, ''];
   let targetPath: string | undefined;
   let declined = false;
   if (args.write !== false) {
-    const candidate = await prepareTarget(args, root, testDir);
+    const candidate = await prepareTarget(args, root, testDir, python);
     const confirmed = await confirmBeforeWrite(ctx, `Write the new test ${relativeToRoot(root, candidate)}?`, spec);
     if (confirmed === 'declined') {
       declined = true;
@@ -485,7 +678,7 @@ async function walkFlow(
     '',
     '### Test source',
     '',
-    '```ts',
+    python ? '```python' : '```ts',
     clipLines(spec, 200, 12_000),
     '```',
     '',
@@ -502,7 +695,7 @@ async function walkFlow(
       projectRoot: root,
       configPath,
       testFiles: [targetPath],
-      project: args.project,
+      ...(python ? {} : { project: args.project }),
       retries: 0,
       retryOnFailure: false,
       timeoutMs: args.timeoutMs,
@@ -535,13 +728,15 @@ async function walkFlow(
 export const generateE2ETestTool = {
   name: 'generate-e2e-test',
   description:
-    "Scaffold a Playwright test from a description using the project's REAL selectors. Scans the agent's recent file changes (git working tree / last commit, mtime fallback), extracts data-testid / role / label / placeholder / id locators with their source locations, optionally cross-checks them against the live page, writes a ready-to-run spec, and returns next steps. With `steps` it walks the flow on the live page instead: each step must work there, the spec replays them, asserts the URL and aria snapshot where the flow landed, and is run once to prove it passes.",
+    "Scaffold a Playwright test (a .spec.ts, or a test_*.py module in a pytest-playwright project) from a description using the project's REAL selectors. Scans the agent's recent file changes (git working tree / last commit, mtime fallback), extracts data-testid / role / label / placeholder / id locators with their source locations, optionally cross-checks them against the live page, writes a ready-to-run spec, and returns next steps. With `steps` it walks the flow on the live page instead: each step must work there, the spec replays them, asserts the URL and aria snapshot where the flow landed, and is run once to prove it passes.",
   inputSchema: generateE2ETestSchema,
   handler: async (args: GenerateE2ETestInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('generate-e2e-test', async () => {
       const root = await resolveProjectRoot(args.projectRoot, ctx);
       const detection = await detectProject(root);
-      const configPath = resolveConfigSelection(detection, args.config);
+      // pytest-playwright suites get a test_*.py module in Python.
+      const python = !detection.hasPlaywright && (await detectPytestProject(root)) !== null;
+      const configPath = python ? undefined : resolveConfigSelection(detection, args.config);
 
       // Entry URL: explicit pageUrl, else baseURL / webServer url from config.
       let entryUrl: string | undefined;
@@ -549,6 +744,16 @@ export const generateE2ETestTool = {
       if (args.pageUrl) {
         entryUrl = assertHttpUrl(args.pageUrl);
         entryUrlSource = 'pageUrl argument';
+      } else if (python) {
+        const found = await pytestBaseUrl(root);
+        if (found) {
+          try {
+            entryUrl = assertHttpUrl(found);
+            entryUrlSource = 'base_url from the pytest config';
+          } catch {
+            entryUrl = undefined;
+          }
+        }
       } else if (configPath) {
         const source = await readFile(configPath, 'utf8').catch(() => '');
         const found = detectEntryUrl(source);
@@ -570,10 +775,10 @@ export const generateE2ETestTool = {
       if (args.steps && args.steps.length > 0) {
         if (!entryUrl) {
           throw new PlaywrightMcpError('Walking a flow needs a start URL', 'INVALID_INPUT', {
-            hint: 'Pass pageUrl, or set baseURL in playwright.config.',
+            hint: python ? 'Pass pageUrl, or set base_url in pytest.ini (pytest-base-url).' : 'Pass pageUrl, or set baseURL in playwright.config.',
           });
         }
-        return walkFlow(args, ctx, root, entryUrl, configPath, detection.testDir ?? undefined);
+        return walkFlow(args, ctx, root, entryUrl, configPath, python ? undefined : (detection.testDir ?? undefined), python);
       }
 
       // 1. What changed recently, and which selectors do those files declare?
@@ -623,13 +828,15 @@ export const generateE2ETestTool = {
 
       // 4. Build and (optionally) write the spec.
       const live = pickLiveLocators(args.description, liveElements);
-      const spec = buildSpec({ description: args.description, entryUrl, selectors: ranked, live });
+      const spec = python
+        ? buildPythonSpec({ description: args.description, entryUrl, selectors: ranked, live })
+        : buildSpec({ description: args.description, entryUrl, selectors: ranked, live });
 
       let targetPath: string | undefined;
       let confirmed: Awaited<ReturnType<typeof confirmBeforeWrite>> = 'not-asked';
       const shouldWrite = args.write !== false;
       if (shouldWrite) {
-        const candidate = await prepareTarget(args, root, detection.testDir ?? undefined);
+        const candidate = await prepareTarget(args, root, python ? undefined : (detection.testDir ?? undefined), python);
         confirmed = await confirmBeforeWrite(ctx, `Write the new test ${relativeToRoot(root, candidate)}?`, spec);
         if (confirmed !== 'declined') {
           targetPath = candidate;
@@ -695,7 +902,7 @@ export const generateE2ETestTool = {
 
       if (liveNote) lines.push(`> ${liveNote}`, '');
 
-      lines.push('### Test source', '', '```ts', clipLines(spec, 200, 12_000), '```', '');
+      lines.push('### Test source', '', python ? '```python' : '```ts', clipLines(spec, 200, 12_000), '```', '');
 
       lines.push('### Next steps', '');
       lines.push(
