@@ -465,6 +465,15 @@ export const pageStateShape = {
     .boolean()
     .optional()
     .describe('Abort POST/PUT/PATCH/DELETE requests no mock answers, so steps cannot change real data (default: PW_MCP_BLOCK_WRITES)'),
+  blockResources: z
+    .array(z.enum(['image', 'media', 'font', 'stylesheet', 'trackers']))
+    .max(5)
+    .optional()
+    .describe("Skip these requests for speed and privacy: image, media, font, stylesheet, trackers (known analytics/ad hosts); default PW_MCP_BLOCK_RESOURCES"),
+  offline: z
+    .boolean()
+    .optional()
+    .describe('Go offline once the page has loaded, before steps run, to check offline and retry states'),
   har: z
     .object({
       path: z.string().min(1).max(500).describe('.har or .zip inside the project'),
@@ -499,11 +508,36 @@ export interface PageStateInput {
   routes?: Array<z.infer<typeof routeMockSchema>>;
   viewport?: { width: number; height: number };
   blockWrites?: boolean;
+  blockResources?: BlockableResource[];
+  offline?: boolean;
   har?: { path: string; mode?: 'replay' | 'record'; url?: string; notFound?: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
   channel?: BrowserChannel;
   connect?: string;
+}
+
+export type BlockableResource = 'image' | 'media' | 'font' | 'stylesheet' | 'trackers';
+
+const BLOCKABLE: readonly BlockableResource[] = ['image', 'media', 'font', 'stylesheet', 'trackers'];
+
+/**
+ * Hosts skipped by blockResources 'trackers': common analytics, tag and ad
+ * networks. A request to the host or any subdomain of it is aborted.
+ */
+export const TRACKER_HOSTS: readonly string[] = [
+  'google-analytics.com', 'googletagmanager.com', 'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+  'facebook.net', 'connect.facebook.net', 'hotjar.com', 'clarity.ms', 'segment.com', 'segment.io', 'mixpanel.com',
+  'amplitude.com', 'fullstory.com', 'heap.io', 'heapanalytics.com', 'mouseflow.com', 'newrelic.com', 'nr-data.net',
+  'sentry.io', 'datadoghq-browser-agent.com', 'browser-intake-datadoghq.com', 'adsrvr.org', 'criteo.com', 'taboola.com',
+  'outbrain.com', 'linkedin.com/px', 'snap.licdn.com', 'bat.bing.com', 'quantserve.com', 'scorecardresearch.com',
+].filter((host) => !host.includes('/'));
+
+/** blockResources from the argument, else PW_MCP_BLOCK_RESOURCES (comma separated). */
+export function resolveBlockResources(input: BlockableResource[] | undefined): BlockableResource[] | undefined {
+  const raw = input ?? (process.env.PW_MCP_BLOCK_RESOURCES ?? '').split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+  const picked = [...new Set(raw)].filter((entry): entry is BlockableResource => (BLOCKABLE as readonly string[]).includes(entry));
+  return picked.length > 0 ? picked : undefined;
 }
 
 export type BrowserChannel = 'chrome' | 'chrome-beta' | 'msedge' | 'msedge-beta';
@@ -532,6 +566,11 @@ export interface ResolvedPageState {
   viewport?: { width: number; height: number };
   /** Abort write requests (POST/PUT/PATCH/DELETE) that no mock or HAR answers. */
   blockWrites?: boolean;
+  /** Resource types (and tracker hosts) to abort; mocks and HAR answer first. */
+  blockResources?: BlockableResource[];
+  trackerHosts?: readonly string[];
+  /** Go offline after the page loads, before steps. */
+  offline?: boolean;
   har?: { path: string; mode: 'replay' | 'record'; url?: string; notFound: 'abort' | 'fallback' };
   browser?: BrowserEngine;
   device?: string;
@@ -713,6 +752,12 @@ export async function resolvePageState(
   if (input.viewport) out.viewport = input.viewport;
   const blockWrites = input.blockWrites ?? /^(1|true|yes)$/i.test(process.env.PW_MCP_BLOCK_WRITES ?? '');
   if (blockWrites) out.blockWrites = true;
+  const blockResources = resolveBlockResources(input.blockResources);
+  if (blockResources) {
+    out.blockResources = blockResources;
+    if (blockResources.includes('trackers')) out.trackerHosts = TRACKER_HOSTS;
+  }
+  if (input.offline) out.offline = true;
   if (input.har) out.har = await resolveHar(input.har, root, ctx);
   if (input.browser && input.browser !== 'chromium') {
     if (serverlessChromiumEnabled()) {
@@ -815,6 +860,8 @@ export function describePageState(state: ResolvedPageState, root: string): strin
   if (state.actions?.length) parts.push(`${state.actions.length} step(s) run first`);
   if (state.routes?.length) parts.push(`${state.routes.length} mocked route(s)`);
   if (state.blockWrites) parts.push('write requests blocked');
+  if (state.blockResources) parts.push(`skipping ${state.blockResources.join(', ')}`);
+  if (state.offline) parts.push('offline after load');
   if (state.har) {
     const file = `\`${relativeToRoot(root, state.har.path)}\``;
     parts.push(state.har.mode === 'record' ? `recording HAR to ${file}` : `HAR replay from ${file}`);
@@ -972,6 +1019,8 @@ export interface BrowserScriptData {
   actionsDone?: string[];
   /** blockWrites: the write requests that were aborted (first 20) and how many in all. */
   blockedWrites?: { total: number; requests: Array<{ method: string; url: string }> };
+  /** blockResources: how many requests were skipped. */
+  blockedResources?: number;
   /** Every open tab, when an action opened more than one; `active` is the one inspected. */
   tabs?: BrowserTab[];
   durationMs?: number;
@@ -996,6 +1045,11 @@ export interface BrowserTab {
   url: string;
   title: string;
   active: boolean;
+}
+
+/** One Markdown line counting the requests blockResources skipped. */
+export function describeBlockedResources(count: number | undefined): string[] {
+  return count ? [`**Skipped requests:** ${count} (blockResources)`] : [];
 }
 
 /** Markdown lines naming the write requests blockWrites aborted. */

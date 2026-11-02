@@ -896,6 +896,26 @@ let serverPlaywrightVersion = '';
         return route.abort('blockedbyclient');
       });
     }
+    // blockResources: after blockWrites, before HAR and mocks, so a mock or
+    // replay still answers a request it names.
+    const blockedResources = { total: 0 };
+    if (cfg.blockResources && cfg.blockResources.length && !cfg.snapshotHtmlPath) {
+      const types = new Set(cfg.blockResources.filter((t) => t !== 'trackers'));
+      const hosts = cfg.blockResources.includes('trackers') ? (cfg.trackerHosts || []) : [];
+      const isTracker = (url) => {
+        let host = '';
+        try { host = new URL(url).hostname.toLowerCase(); } catch (e) { return false; }
+        return hosts.some((h) => host === h || host.endsWith('.' + h));
+      };
+      await context.route('**/*', (route) => {
+        const request = route.request();
+        if (types.has(request.resourceType()) || (hosts.length && isTracker(request.url()))) {
+          blockedResources.total += 1;
+          return route.abort('blockedbyclient');
+        }
+        return route.fallback();
+      });
+    }
     // Replay goes first so the network mocks below, registered later, win.
     if (cfg.har && cfg.har.mode === 'replay' && !cfg.snapshotHtmlPath) {
       await context.routeFromHAR(cfg.har.path, { url: cfg.har.url, notFound: cfg.har.notFound || 'abort' });
@@ -973,6 +993,8 @@ let serverPlaywrightVersion = '';
       if (cfg.waitFor) await page.locator(cfg.waitFor).first().waitFor({ state: 'visible', timeout: cfg.waitTimeout || 5000 });
       // perf: let late images, fonts and shifts land before anything else.
       if (cfg.mode === 'perf' && cfg.settleMs) await page.waitForTimeout(cfg.settleMs);
+      // offline: the page is up; now cut the network so steps see the offline UI.
+      if (cfg.offline) await context.setOffline(true);
       if (cfg.actions && cfg.actions.length) {
         const ran = await runActions(page, cfg.actions, cfg.actionTimeout || 10000);
         actionsDone = ran.done;
@@ -1024,6 +1046,7 @@ let serverPlaywrightVersion = '';
           actionsDone: actionsDone,
           routeHits: routeHits,
           blockedWrites: blockedWrites.total ? blockedWrites : undefined,
+          blockedResources: blockedResources.total || undefined,
           httpStatus: httpStatus,
           durationMs: Date.now() - cfg.startedAt,
           login: {
@@ -1062,6 +1085,7 @@ let serverPlaywrightVersion = '';
           actionsDone: actionsDone,
           routeHits: routeHits,
           blockedWrites: blockedWrites.total ? blockedWrites : undefined,
+          blockedResources: blockedResources.total || undefined,
           httpStatus: httpStatus,
           durationMs: Date.now() - cfg.startedAt,
         },
@@ -1269,6 +1293,7 @@ let serverPlaywrightVersion = '';
     if (context.pages().length > 1) data.tabs = await listTabs(context, page);
     data.routeHits = routeHits;
     if (blockedWrites.total) data.blockedWrites = blockedWrites;
+    if (blockedResources.total) data.blockedResources = blockedResources.total;
     data.finalUrl = data.finalUrl || page.url();
     data.httpStatus = httpStatus;
     data.durationMs = Date.now() - cfg.startedAt;

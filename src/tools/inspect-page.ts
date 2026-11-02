@@ -19,6 +19,7 @@ import {
   describeRouteHits,
   describeTabs,
   describeHydration,
+  describeBlockedResources,
   describeBlockedWrites,
   guard,
   loginHint,
@@ -182,6 +183,7 @@ export const inspectPageTool = {
       lines.push(...describeHydration(data.hydration));
       lines.push(...describeTabs(data.tabs));
       lines.push(...describeBlockedWrites(data.blockedWrites));
+      lines.push(...describeBlockedResources(data.blockedResources));
       lines.push('');
       if (data.httpStatus !== undefined && data.httpStatus >= 400) {
         lines.push(`> ⚠️ The page answered **HTTP ${data.httpStatus}**, so this is its error page.`, '');
