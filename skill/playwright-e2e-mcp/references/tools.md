@@ -47,7 +47,7 @@ Loads a run from CI (0.5.0+) so the other tools work on it.
 
 | Argument | Type | Notes |
 | --- | --- | --- |
-| `report` | string | Required: JSON report inside the project, or a folder of blob-report zips from sharded jobs (merged with `playwright merge-reports`) |
+| `report` | string | Required: JSON report inside the project, a folder of blob-report zips from sharded jobs (merged with `playwright merge-reports`), or (0.13.0+) a GitHub Actions run URL / GitLab job URL, downloaded with `GITHUB_TOKEN` / `GITLAB_TOKEN` |
 | `traceDirs` | string[] | Where the job's `test-results` artifact was unpacked (default: the report's folder and its parent) |
 | `commit`, `branch` | string | Override the report metadata |
 | `record` | boolean | Add the run to the history (default true) |
@@ -77,6 +77,7 @@ becomes the last run for `get-failure`, `suggest-fix` and `diagnose-flaky`.
 | `har` | object | `{ path, mode?: replay\|record, url?, notFound?: abort\|fallback }` (0.5.0+): replay requests from a HAR inside the project, or record the traffic to one. `routes` still win |
 | `browser` | `chromium` \| `firefox` \| `webkit` | Engine (0.5.0+, default chromium); must be installed |
 | `viewport` | object | `{ width, height }` |
+| `connect` | string | Remote browser (0.13.0+): `ws(s)://` Playwright server endpoint or `cdp:` + DevTools URL; `{{env:NAME}}` tokens allowed; default `PW_MCP_CONNECT` |
 
 Returns each element's Playwright locators proven unique on the page (role +
 name first), unique CSS selector, tag, visibility, box, text and attributes,
@@ -219,6 +220,9 @@ third-party weight, and a Playwright test asserting LCP and CLS budgets.
 | `candidate` | number | Strict mode violation: which listed match the test meant (0.5.0+) |
 | `url`, `storageState`, `headers` | | Heal against a live page instead of the trace snapshot |
 | `config`, `timeoutMs` | | As `run-test` |
+
+Python specs (0.13.0+) get the same fixes, written in Python syntax and verified
+with pytest.
 
 For a strict mode violation (0.5.0+) it uses the unique locator Playwright
 printed for the intended match: the exact-name match with `high` confidence, or

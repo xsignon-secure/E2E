@@ -135,13 +135,14 @@ const TOOLS: ToolSpec[] = [
   {
     ...loadReportTool,
     title: 'Load a CI report',
-    // Reads a report the caller points at; merging blob reports spawns
-    // Playwright; records the run in the local history.
+    // Reads a report the caller points at, or downloads a CI run's
+    // artifacts from GitHub/GitLab when given a run URL; merging blob
+    // reports spawns Playwright; records the run in the local history.
     annotations: {
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
-      openWorldHint: false,
+      openWorldHint: true,
     },
     handler: loadReportTool.handler as ToolSpec['handler'],
   },
@@ -369,7 +370,7 @@ export const READ_ONLY_TOOLS: readonly string[] = ['list-tests', 'get-failure', 
 
 /**
  * Named tool sets for PW_MCP_TOOLS / --tools. Every tool definition costs
- * context on each request (all twenty are ~11.9k tokens), so a client that
+ * context on each request (all twenty are ~12.1k tokens), so a client that
  * only fixes failing suites can load the core loop alone.
  */
 export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {

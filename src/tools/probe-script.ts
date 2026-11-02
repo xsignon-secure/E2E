@@ -37,6 +37,12 @@ function send(payload) {
 
 function classifyError(message) {
   const m = String(message);
+  if (/browserType\.connect|connectOverCDP/.test(m)) {
+    if (/version|428|Precondition/i.test(m)) {
+      return { kind: 'NAVIGATION_FAILED', hint: 'The remote browser runs another Playwright version. Match it: device clouds take the client version in their capabilities (e.g. client.playwrightVersion), run-server must use the same @playwright/test as the project.' };
+    }
+    return { kind: 'NAVIGATION_FAILED', hint: 'Could not reach the remote browser. Check the endpoint, the access key (in an {{env:…}} variable) and that the service or npx playwright run-server is running.' };
+  }
   if (/Unknown device preset/.test(m)) {
     return { kind: 'INVALID_INPUT', hint: 'Use a name from Playwright\'s device list, e.g. "iPhone 15", "Pixel 7", "iPad Pro 11" or "Desktop Chrome".' };
   }
@@ -808,7 +814,7 @@ function summariseRequests(requests, timings, pageUrl) {
   try {
     const engine = cfg.browser || 'chromium';
     const launchOptions = { headless: true };
-    if (cfg.blockPrivate) {
+    if (cfg.blockPrivate && !cfg.connect) {
       // SSRF guard: every browser connection (each redirect hop and
       // subresource too) goes through this local proxy, which resolves
       // the host itself and refuses blocked ranges before connecting.
@@ -827,7 +833,15 @@ function summariseRequests(requests, timings, pageUrl) {
       launchOptions.executablePath = cfg.serverlessChromium.executablePath;
       launchOptions.args = cfg.serverlessChromium.args.concat(launchOptions.args || []);
     }
-    browser = await pw[engine].launch(launchOptions);
+    if (cfg.connect) {
+      // A remote browser (device cloud, playwright run-server, a Chrome with
+      // remote debugging): connect instead of launching.
+      browser = cfg.connect.cdp
+        ? await pw.chromium.connectOverCDP(cfg.connect.url, { timeout: 30000 })
+        : await pw[engine].connect(cfg.connect.url, { timeout: 30000 });
+    } else {
+      browser = await pw[engine].launch(launchOptions);
+    }
     let contextOptions = { viewport: cfg.viewport || { width: 1280, height: 720 } };
     if (cfg.device) {
       const preset = pw.devices && pw.devices[cfg.device];
@@ -1242,7 +1256,14 @@ function summariseRequests(requests, timings, pageUrl) {
     await closeBrowser();
     process.exit(0);
   } catch (err) {
-    const message = err && err.message ? err.message : String(err);
+    let message = err && err.message ? err.message : String(err);
+    // Never echo a remote endpoint: its query string usually holds the access key.
+    if (cfg.connect && cfg.connect.url) {
+      const u = cfg.connect.url;
+      message = message.split(u).join('<remote ' + cfg.connect.host + '>');
+      const q = u.indexOf('?');
+      if (q > 0) message = message.split(u.slice(q)).join('?<redacted>');
+    }
     const classified = classifyError(message);
     const extra = (err && err.pageUrl ? '\nPage URL at failure: ' + err.pageUrl : '') + (err && err.callLog ? '\nCall log:\n' + err.callLog : '');
     send({ ok: false, kind: classified.kind, error: message + extra, hint: classified.hint, actionsDone: err && err.actionsDone });

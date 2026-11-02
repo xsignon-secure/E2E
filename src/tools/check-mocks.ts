@@ -17,7 +17,7 @@ import { assertRealPathInside, isPathInside, joinProjectPath, sanitizeUserPath, 
 import { assertUrlAllowed } from '../utils/url-policy.js';
 import { diffShapes, findMocks, liveUrl, mocksFromHar, shapeOf } from '../utils/mock-drift.js';
 import type { DriftFinding, FoundMock } from '../utils/mock-drift.js';
-import { loginEnvAllowed } from './save-login.js';
+import { resolveEnvTokens } from '../utils/env-tokens.js';
 import { guard, resolveProjectRoot, toolText } from './shared.js';
 
 const MAX_MOCKS = 40;
@@ -45,22 +45,7 @@ export const checkMocksSchema = checkMocksInput;
 /** Replace {{env:NAME}} in header values with allowed environment variables. */
 export function resolveHeaders(headers: Record<string, string> | undefined): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers ?? {})) {
-    out[name] = value.replace(/\{\{env:([A-Z0-9_]+)\}\}/g, (_all, env: string) => {
-      if (!loginEnvAllowed(env)) {
-        throw new PlaywrightMcpError(`{{env:${env}}} is not an allowed variable`, 'INVALID_INPUT', {
-          hint: 'Name it E2E_*, TEST_*, PW_*, PLAYWRIGHT_* or LOGIN_* (e.g. E2E_API_TOKEN), or list it in PW_MCP_LOGIN_ENV.',
-        });
-      }
-      const resolved = process.env[env];
-      if (resolved === undefined || resolved === '') {
-        throw new PlaywrightMcpError(`Not set in the server's environment: ${env}`, 'INVALID_INPUT', {
-          hint: 'Set it where the MCP server starts (the env block of your MCP client config), then restart the server.',
-        });
-      }
-      return resolved;
-    });
-  }
+  for (const [name, value] of Object.entries(headers ?? {})) out[name] = resolveEnvTokens(value);
   return out;
 }
 

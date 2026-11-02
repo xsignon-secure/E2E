@@ -28,7 +28,7 @@ project, so the version you test with is the version the server uses.
 ## 1. Tool definitions cost tokens on every request
 
 An MCP client sends every tool's name, description and input schema with every model
-request. All twenty tools cost about 11.9k tokens; that is paid again on each turn, whether or
+request. All twenty tools cost about 12.1k tokens; that is paid again on each turn, whether or
 not a tool is called.
 
 Decisions that follow from this:
@@ -100,6 +100,13 @@ default. There is no telemetry and no account.
 - **`blockWrites`** (or `PW_MCP_BLOCK_WRITES=1`) aborts every POST, PUT, PATCH and DELETE
   from the page tools that no mock answers, so steps pointed at a real environment cannot
   place an order or delete data.
+- **CI downloads** (`src/utils/ci-artifacts.ts`) happen only when `load-report` is given a
+  GitHub Actions run or GitLab job URL, with the user's own `GITHUB_TOKEN` / `GITLAB_TOKEN`.
+  The token is sent only to the API host the URL names, every URL passes the private-address
+  policy, and archives are unpacked inside `.playwright-e2e-mcp/ci/` with entries that would
+  escape the folder dropped.
+- **Remote browsers** (`connect`, `PW_MCP_CONNECT`) are opt-in, refused on the HTTP bridge,
+  and the endpoint (which often carries an access key) is redacted from errors.
 
 ## 4. Logins without passwords in the chat
 
@@ -188,8 +195,10 @@ from a small plugin the server writes to its temp folder and loads with `-p`, so
 installed in the project; it writes one line per finished test, which keeps killed runs useful
 in the same way as the Node live reporter. The result has the same shape as a Node run, so
 `get-failure` reads pytest-playwright's traces with the same trace reader, and the heal guard
-and `check-mocks` read `.py` files. Patching Python specs and flaky diagnosis are still Node only.
+and `check-mocks` read `.py` files. `suggest-fix` converts Python locators to the TypeScript
+form the healer works on and back (`src/utils/python-locator.ts`), so `.py` specs get the same
+verified fixes. Flaky diagnosis is still Node only.
 
 ## Roadmap
 
-- Python: locator fixes for `.py` specs (`suggest-fix`) and flaky diagnosis through pytest-repeat.
+- Python: flaky diagnosis through pytest-repeat.

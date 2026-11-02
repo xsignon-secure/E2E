@@ -5,6 +5,7 @@
  * and list-tests.
  */
 
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -265,6 +266,13 @@ test('live: run-test, get-failure and list-tests on a pytest-playwright project'
   assert.match(textOf(single), /tests\/test_shop\.py::TestCheckout::test_button/);
   assert.equal(single.structuredContent.run.failed, 1);
 
-  assert.match(textOf(await suggestFixTool.handler({ index: 1 }, ctx)), /Python test is not patched/);
+  // Index 2 after the single run above is gone; re-run the suite for both failures.
+  await runTestTool.handler({}, ctx);
+  const drift = textOf(await suggestFixTool.handler({ index: 2 }, ctx));
+  assert.match(drift, /Proposed locator fix/);
+  assert.match(drift, /\+\s+page\.get_by_(?:role\("button", name="Proceed to checkout"\)|test_id\("checkout-btn"\))\.click\(timeout=1000\)/);
+  const applied = await suggestFixTool.handler({ index: 2, apply: true }, ctx);
+  assert.match(textOf(applied), /Verified — the test passes/);
+  assert.doesNotMatch(readFileSync(path.join(root, 'tests', 'test_shop.py'), 'utf8'), /checkout-button/);
   assert.match(textOf(await diagnoseFlakyTool.handler({}, ctx)), /does not support pytest projects yet/);
 });

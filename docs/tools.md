@@ -62,6 +62,7 @@ out; results still carry the same fields.
 | `browser` | `chromium` \| `firefox` \| `webkit` | Browser engine (default `chromium`; the engine must be installed with `npx playwright install`). `audit-performance` is Chromium-only, and WebKit is refused while private addresses are blocked |
 | `device` | string | A Playwright device preset such as `iPhone 15`, `Pixel 7` or `iPad Pro 11`: its viewport, user agent, pixel ratio and touch. The engine stays `browser`'s (Firefox has no mobile emulation); `viewport` still overrides the size. An unknown name lists close matches |
 | `channel` | `chrome` \| `chrome-beta` \| `msedge` \| `msedge-beta` | Run the installed Google Chrome or Microsoft Edge instead of bundled Chromium (`npx playwright install chrome` or `msedge`). Chromium engine only; not on the hosted endpoint |
+| `connect` | string | Use a remote browser instead of launching one: a Playwright server endpoint `ws://…` / `wss://…` (`npx playwright run-server`, Browserless, Moon, a device cloud's Playwright endpoint), or `cdp:` + a Chrome DevTools URL (`cdp:http://localhost:9222`, Chromium only). `{{env:NAME}}` tokens are filled from the environment (`E2E_*`, `TEST_*`, `PW_*`, `PLAYWRIGHT_*`, `LOGIN_*`), so an access key never goes through chat. Defaults to `PW_MCP_CONNECT`. Not with `channel`; local server only |
 
 Mocks make states that are hard to reach easy to inspect, audit or measure: the error
 banner after a 500, the empty list, the spinner of a slow API, the page without a
@@ -82,6 +83,15 @@ The same file works in a spec with `page.routeFromHAR()`.
 
 A failing step reports which one failed and how many ran. When the page lands on a login
 screen, the response says so and suggests `storageState`.
+
+A remote browser makes the page tools work against a browser grid or device cloud:
+
+```json
+{ "url": "https://staging.example.com", "connect": "wss://cloud.example.com/playwright?key={{env:E2E_GRID_KEY}}" }
+```
+
+The Playwright server's version must match the project's Playwright (the error says so
+when it does not). The endpoint and its query are left out of results and logs.
 
 ## `run-test`
 
@@ -442,6 +452,10 @@ numbers from one headless Chromium; field data (CrUX, RUM) can differ.
 | `storageState` / `headers` | — | For `url`, as in [Page state](#page-state-signed-in-pages-headers-and-steps) |
 | `config` / `timeoutMs` / `projectRoot` | — | As with `run-test` |
 
+Python (pytest-playwright) failures get the same three fixes. The locator in the error is
+read in Python syntax, and the replacement is written back in Python syntax
+(`page.get_by_role("button", name="Checkout")`); the verify run uses pytest.
+
 Before writing, the server asks you to confirm the diff when your client supports MCP
 elicitation (see [Asking before changing files](#asking-before-changing-files)).
 
@@ -561,13 +575,22 @@ the lockfile changed in the range (every step uses your current dependencies).
 
 | Argument | Type | Description |
 | --- | --- | --- |
-| `report` | string | A Playwright JSON report inside the project (e.g. `ci-artifacts/results.json`), or a folder of blob-report zips from sharded jobs (merged with the project's `playwright merge-reports`) (required) |
+| `report` | string | A Playwright JSON report inside the project (e.g. `ci-artifacts/results.json`), a folder of blob-report zips from sharded jobs (merged with the project's `playwright merge-reports`), or a CI run URL: `https://github.com/<owner>/<repo>/actions/runs/<id>` or `https://<gitlab-host>/<group>/<project>/-/jobs/<id>` (required) |
 | `traceDirs` | string[] | Folders inside the project where the job's `test-results` artifact was unpacked (default: the report's folder and its parent) |
 | `commit` / `branch` | string | Override what the report's metadata says (Playwright records it with `captureGitInfo` or on CI) |
 | `record` | boolean | Add the run to the history (default `true`) |
 | `timeoutMs` | number | Limit for merging blob reports (default `120000`) |
 
-Download the artifacts first, for example with
+Given a run URL, it downloads the run's report-like artifacts (names containing
+`playwright`, `report`, `blob`, `results`, `trace` or `e2e`; up to 10) into
+`.playwright-e2e-mcp/ci/<run>/`, finds the JSON report or blob reports in them, and takes the
+commit, branch and run link from the CI API. It needs a token with read access, set where the
+server starts: `GITHUB_TOKEN` or `GH_TOKEN` (e.g. `GITHUB_TOKEN=$(gh auth token)`), or
+`GITLAB_TOKEN` (`read_api`) / `CI_JOB_TOKEN`. GitHub Enterprise and self-managed GitLab work
+from their URLs; `PW_MCP_GITHUB_API` / `PW_MCP_GITLAB_API` override the API address. Nothing
+is fetched unless you pass a URL.
+
+Or download the artifacts yourself, for example with
 `gh run download <run-id> -n playwright-report -D ci-artifacts`. The CI machine's absolute
 paths are mapped onto your checkout, so failures point at local files and get-failure can
 open each trace. The run becomes the last run, so the usual loop works on it: `get-failure`,

@@ -40,6 +40,7 @@ import { HOSTED_NO_BROWSER, isHostedDeployment, selectConfig } from '../utils/pr
 import { childEnv, runProcess } from '../utils/playwright-runner.js';
 import { extractJsonFromText } from '../utils/report-parser.js';
 import { BLOCKED_RANGES, assertUrlAllowed, blockPrivateUrls } from '../utils/url-policy.js';
+import { resolveEnvTokens } from '../utils/env-tokens.js';
 import { serverlessChromium, serverlessChromiumEnabled } from '../utils/serverless-chromium.js';
 import type { StructuredResult } from './structured.js';
 
@@ -434,6 +435,11 @@ export const pageStateShape = {
     .enum(['chrome', 'chrome-beta', 'msedge', 'msedge-beta'])
     .optional()
     .describe('Branded Chromium to launch instead of the bundled one (must be installed)'),
+  connect: z
+    .string()
+    .max(4_000)
+    .optional()
+    .describe("Remote browser: Playwright ws(s):// endpoint or 'cdp:<url>'; keys as {{env:E2E_…}}"),
 };
 
 export interface PageStateInput {
@@ -448,6 +454,7 @@ export interface PageStateInput {
   browser?: BrowserEngine;
   device?: string;
   channel?: BrowserChannel;
+  connect?: string;
 }
 
 export type BrowserChannel = 'chrome' | 'chrome-beta' | 'msedge' | 'msedge-beta';
@@ -480,6 +487,40 @@ export interface ResolvedPageState {
   browser?: BrowserEngine;
   device?: string;
   channel?: BrowserChannel;
+  /** A remote browser: Playwright's connect (ws) or connectOverCDP. */
+  connect?: { url: string; cdp: boolean; host: string };
+}
+
+/**
+ * Resolve the remote browser endpoint (argument, else PW_MCP_CONNECT).
+ * Keys in the URL come from {{env:…}} placeholders; only the host is ever
+ * shown back. Refused where the server must not open arbitrary sockets.
+ */
+export function resolveConnect(input: string | undefined, ctx: Pick<ToolContext, 'restricted'>): ResolvedPageState['connect'] {
+  const raw = (input ?? process.env.PW_MCP_CONNECT ?? '').trim();
+  if (raw === '') return undefined;
+  if (ctx.restricted || serverlessChromiumEnabled() || blockPrivateUrls()) {
+    throw new PlaywrightMcpError('connect is not available on this server', 'INVALID_INPUT', {
+      hint: 'Remote browsers work with a local install of the server (stdio), where the address guard is off.',
+    });
+  }
+  const cdp = /^cdp:/i.test(raw);
+  const url = resolveEnvTokens(cdp ? raw.slice(4).trim() : raw);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new PlaywrightMcpError('connect is not a valid URL', 'INVALID_INPUT', {
+      hint: "Pass a ws(s):// Playwright endpoint, or 'cdp:http://localhost:9222' for a Chrome started with --remote-debugging-port.",
+    });
+  }
+  const allowed = cdp ? ['ws:', 'wss:', 'http:', 'https:'] : ['ws:', 'wss:'];
+  if (!allowed.includes(parsed.protocol)) {
+    throw new PlaywrightMcpError(`connect needs ${cdp ? 'an http(s) or ws(s)' : 'a ws:// or wss://'} URL`, 'INVALID_INPUT', {
+      hint: cdp ? "E.g. 'cdp:http://localhost:9222'." : "E.g. 'wss://cdp.browserstack.com/playwright?caps=…' or 'ws://localhost:3000/' from `npx playwright run-server --port 3000`.",
+    });
+  }
+  return { url, cdp, host: parsed.host };
 }
 
 /**
@@ -659,6 +700,18 @@ export async function resolvePageState(
     }
     out.channel = input.channel;
   }
+  const connect = resolveConnect(input.connect, ctx);
+  if (connect) {
+    if (input.channel) {
+      throw new PlaywrightMcpError('channel and connect cannot be combined', 'INVALID_INPUT', {
+        hint: 'The remote service picks the browser build; set it in its capabilities.',
+      });
+    }
+    if (connect.cdp && (input.browser ?? 'chromium') !== 'chromium') {
+      throw new PlaywrightMcpError('cdp: endpoints are Chromium only', 'INVALID_INPUT', { hint: 'Leave browser unset, or use a ws:// Playwright endpoint for Firefox and WebKit.' });
+    }
+    out.connect = connect;
+  }
   if (input.routes && input.routes.length > 0) out.routes = resolveRouteMocks(input.routes);
   if (input.actionTimeoutMs !== undefined) out.actionTimeout = input.actionTimeoutMs;
   if (input.actions && input.actions.length > 0) {
@@ -720,6 +773,7 @@ export function describePageState(state: ResolvedPageState, root: string): strin
   if (state.browser) parts.push(state.browser);
   if (state.channel) parts.push(state.channel);
   if (state.device) parts.push(`device \`${state.device}\``);
+  if (state.connect) parts.push(`remote browser at \`${state.connect.host}\`${state.connect.cdp ? ' (CDP)' : ''}`);
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 

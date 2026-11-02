@@ -36,6 +36,8 @@ import {
   tempFilePath,
   writeFileInsideRoot,
 } from '../utils/path-utils.js';
+import { formatPythonLocator, findPythonChainSpan, pythonMessageToTs } from '../utils/python-locator.js';
+import { runPytest } from '../utils/pytest-runner.js';
 import { formatLocator, parseLocator, quote } from '../utils/locator-expr.js';
 import type { LocatorCall } from '../utils/locator-expr.js';
 import { assertUrlAllowed } from '../utils/url-policy.js';
@@ -451,13 +453,11 @@ export const suggestFixTool = {
       const failure = failures[index - 1];
       const out = renderHeader(failure, index, failures.length);
 
-      if (failure.file?.endsWith('.py')) {
-        out.push(
-          'Automatic patches are written for TypeScript and JavaScript specs only, so this Python test is not patched. Use **get-failure** for the DOM at failure, then **inspect-page** or **validate-selector** to find the element and write the Python locator (`page.get_by_role("button", name="…")`) by hand.',
-        );
-        return toolText(out.join('\n'));
-      }
-      if (!failure.file || !isTestFile(failure.file)) {
+      // pytest-playwright: messages print Python locators and fixes are written back in Python.
+      const python = failure.file?.endsWith('.py') === true;
+      const lang = (locator: string): string => (python ? formatPythonLocator(parseLocator(locator)) : locator);
+      const message = python ? pythonMessageToTs(failure.message) : failure.message;
+      if (!failure.file || (!python && !isTestFile(failure.file))) {
         out.push('No spec file is attached to this failure (it is a configuration or global error), so there is nothing to patch. Use **get-failure** for the details.');
         return toolText(out.join('\n'));
       }
@@ -472,7 +472,7 @@ export const suggestFixTool = {
       const notes: string[] = [];
 
       // 1. Strict mode violation: the locator matches several elements.
-      const strict = strictViolationFromMessage(failure.message);
+      const strict = strictViolationFromMessage(message);
       if (strict) {
         const line = lines[lineNo - 1] ?? '';
         let brokenChain: LocatorCall[] | undefined;
@@ -481,15 +481,15 @@ export const suggestFixTool = {
         } catch {
           brokenChain = undefined;
         }
-        const span = brokenChain ? findChainSpan(line, brokenChain) : undefined;
+        const span = brokenChain ? (python ? findPythonChainSpan(line, brokenChain) : findChainSpan(line, brokenChain)) : undefined;
         const picked = pickStrictMatch(strict);
         const chosen =
           args.candidate !== undefined
             ? args.candidate <= strict.matches.length
-              ? { index: args.candidate - 1, why: `You picked match ${args.candidate}; Playwright reports \`${strict.matches[args.candidate - 1].locator}\` as its unique locator.` }
+              ? { index: args.candidate - 1, why: `You picked match ${args.candidate}; Playwright reports \`${lang(strict.matches[args.candidate - 1].locator)}\` as its unique locator.` }
               : undefined
             : picked;
-        const listing = strict.matches.map((m, i) => `${i + 1}. \`${m.locator}\` · \`${clipLines(m.html, 1, 120)}\``);
+        const listing = strict.matches.map((m, i) => `${i + 1}. \`${lang(m.locator)}\` · \`${clipLines(m.html, 1, 120)}\``);
         if (args.candidate !== undefined && !chosen) {
           throw new PlaywrightMcpError(`candidate ${args.candidate} is out of range: Playwright listed ${strict.matches.length} match(es)`, 'INVALID_INPUT', {
             hint: 'Call suggest-fix without candidate to see the list.',
@@ -505,7 +505,7 @@ export const suggestFixTool = {
           );
         } else if (!span) {
           notes.push(
-            `Use \`${strict.matches[chosen.index].locator}\` for \`${strict.locator}\`, but it could not be found on line ${lineNo} of \`${failure.file}\` to patch automatically. Replace it by hand.`,
+            `Use \`${lang(strict.matches[chosen.index].locator)}\` for \`${lang(strict.locator)}\`, but it could not be found on line ${lineNo} of \`${failure.file}\` to patch automatically. Replace it by hand.`,
           );
         } else {
           proposal = {
@@ -513,15 +513,15 @@ export const suggestFixTool = {
             confidence: args.candidate !== undefined ? 'medium' : 'high',
             lineNo,
             before: line,
-            after: `${line.slice(0, span.start)}${strict.matches[chosen.index].locator}${line.slice(span.end)}`,
+            after: `${line.slice(0, span.start)}${lang(strict.matches[chosen.index].locator)}${line.slice(span.end)}`,
             why: `Strict mode violation: ${chosen.why}`,
-            alternatives: strict.matches.filter((_, i) => i !== chosen.index).map((m) => m.locator).slice(0, 3),
+            alternatives: strict.matches.filter((_, i) => i !== chosen.index).map((m) => lang(m.locator)).slice(0, 3),
           };
         }
       }
 
       // 2. Locator drift.
-      const brokenText = strict ? undefined : brokenLocatorFromMessage(failure.message);
+      const brokenText = strict ? undefined : brokenLocatorFromMessage(message);
       if (brokenText) {
         const chain = parseLocator(brokenText);
         const heal = healTokensFor(chain);
@@ -573,7 +573,7 @@ export const suggestFixTool = {
         const best = usable[0];
         const confidence = best ? healConfidence(best, heal, usable[1]) : { level: 'none' as const, matched: [] };
         const line = lines[lineNo - 1] ?? '';
-        const span = findCallSpan(line, chain[0]);
+        const span = python ? findPythonChainSpan(line, chain, 1) : findCallSpan(line, chain[0]);
 
         if (!best || confidence.level === 'none') {
           notes.push(
@@ -588,7 +588,8 @@ export const suggestFixTool = {
             `Found the likely target: \`${bestLocator(best)}\`, but could not locate \`${formatLocator(chain.slice(0, 1))}\` on line ${lineNo} of \`${failure.file}\` to patch it automatically. Replace it by hand.`,
           );
         } else {
-          const replacement = `${line.slice(0, span.start)}${bestLocator(best)}${line.slice(span.end)}`;
+          const bestText = lang(bestLocator(best)!);
+          const replacement = `${line.slice(0, span.start)}${bestText}${line.slice(span.end)}`;
           proposal = {
             kind: 'locator',
             confidence: confidence.level,
@@ -597,13 +598,14 @@ export const suggestFixTool = {
             after: replacement,
             why: `\`${brokenText}\` no longer matches anything. In ${domSource}, ${
               best.role ? `the ${best.role}${best.name ? ` "${clipLines(best.name, 1, 60)}"` : ''}` : `the <${best.tag}> element`
-            } matches ${confidence.matched.map((w) => `"${w}"`).join(', ')}, and \`${bestLocator(best)}\` is proven to resolve to exactly that element.`,
+            } matches ${confidence.matched.map((w) => `"${w}"`).join(', ')}, and \`${bestText}\` is proven to resolve to exactly that element.`,
             alternatives: usable
               .slice(1)
               .filter((element) => healConfidence(element, heal).level !== 'none')
               .slice(0, 2)
               .map((element) => bestLocator(element))
-              .filter((value): value is string => value !== undefined),
+              .filter((value): value is string => value !== undefined)
+              .map(lang),
           };
         }
       }
@@ -686,10 +688,10 @@ export const suggestFixTool = {
       const target = `${specPath}${failure.line ? `:${failure.line}` : ''}`;
       let result: RunTestResult;
       try {
-        result = await runTests({
+        result = await (python ? runPytest : runTests)({
           projectRoot: root,
-          configPath,
-          testFiles: [target],
+          configPath: python ? undefined : configPath,
+          testFiles: [python ? `${failure.file}${failure.line ? `:${failure.line}` : ''}` : target],
           project: failure.project || undefined,
           retries: 0,
           retryOnFailure: false,
