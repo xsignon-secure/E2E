@@ -218,7 +218,8 @@ async function startFixtureServer() {
       };
       if (req.method === 'GET' && req.url === '/ssr') {
         // A server-rendered page in the style of Next.js: the button is in
-        // the HTML, its handler arrives with a slow script 1.2 s later.
+        // the HTML, its handler arrives with a slow script 2.5 s later (wide
+        // enough that a slow runner's first paint still leaves an 800 ms gap).
         html('<div id="__next"><button id="buy">Add to cart</button><p id="added"></p></div><script>self.__next_f=[]</script><script src="/ssr.js" async></script>');
         return;
       }
@@ -226,7 +227,7 @@ async function startFixtureServer() {
         setTimeout(() => {
           res.writeHead(200, { 'content-type': 'text/javascript' });
           res.end("document.getElementById('buy').addEventListener('click',()=>{document.getElementById('added').textContent='Added'});document.getElementById('__next')['__reactContainer$e2e']={};");
-        }, 1200);
+        }, 2500);
         return;
       }
       if (req.method === 'GET' && req.url === '/late') {

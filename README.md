@@ -309,6 +309,41 @@ command for your setup. Upgrade notes for each release are on the
   and reports the fields the mock relies on that the API no longer sends, changed types, new
   nulls and removed endpoints, so a green suite stops hiding a broken contract.
 
+### 🔗 CI runs by URL, remote browsers, Python fixes and AI chat UIs
+
+- **Paste the CI run, skip the download.** Give `load-report` a GitHub Actions run or GitLab job
+  URL. It fetches the report and traces with your own `GITHUB_TOKEN` / `GITLAB_TOKEN`, maps them
+  onto your checkout, and `get-failure` and `suggest-fix` work on that run.
+
+  ```json
+  { "report": "https://github.com/acme/shop/actions/runs/123456789" }
+  ```
+
+- **Any browser, anywhere.** The page tools take `connect`: a Playwright server
+  (`npx playwright run-server`), a browser grid or device cloud, or a Chrome over CDP. Keys stay
+  in the environment as `{{env:…}}`, never in chat.
+
+  ```json
+  { "url": "https://staging.example.com", "connect": "wss://grid.example.com/playwright?key={{env:E2E_GRID_KEY}}" }
+  ```
+
+- **Fixes for pytest suites.** `suggest-fix` now patches `test_*.py` files in Python syntax and
+  re-runs the test with pytest before keeping the change:
+
+  ```diff
+  - page.get_by_test_id("checkout-button").click()
+  + page.get_by_role("button", name="Checkout").click()
+  ```
+
+- **AI chat and streaming UIs.** The agent skill shows how to test answers that stream in: mock
+  the model's stream, wait for the "done" signal instead of the text, and check shape rather than
+  exact wording against a live model.
+
+  ```ts
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeHidden();
+  await expect(page.getByTestId('message').last()).toHaveText('Hello, world!');
+  ```
+
 ### 🤖 CI that comments with working fixes
 
 - **GitHub Action** that writes the diagnosis to the job summary, keeps one PR comment up to date
