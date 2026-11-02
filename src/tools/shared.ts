@@ -41,7 +41,7 @@ import { HOSTED_NO_BROWSER, isHostedDeployment, selectConfig } from '../utils/pr
 import { childEnv, runProcess } from '../utils/playwright-runner.js';
 import { extractJsonFromText } from '../utils/report-parser.js';
 import { BLOCKED_RANGES, assertUrlAllowed, blockPrivateUrls } from '../utils/url-policy.js';
-import { resolveEnvTokens } from '../utils/env-tokens.js';
+import { ENV_TOKEN_RE, resolveEnvTokens } from '../utils/env-tokens.js';
 import { serverlessChromium, serverlessChromiumEnabled } from '../utils/serverless-chromium.js';
 import { fileURLToPath } from 'node:url';
 import type { StructuredResult } from './structured.js';
@@ -584,6 +584,45 @@ export interface ResolvedPageState {
  * Keys in the URL come from {{env:…}} placeholders; only the host is ever
  * shown back. Refused where the server must not open arbitrary sockets.
  */
+/** Host (lowercase, with port when given) of a ws/http URL, or undefined. */
+function connectHost(raw: string): string | undefined {
+  try {
+    return new URL(raw.replace(/^cdp:/i, '').trim().replace(ENV_TOKEN_RE, 'x')).host.toLowerCase() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Hosts that may receive {{env:…}} values in an agent-chosen connect URL. */
+export function trustedConnectHosts(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  const hosts = new Set<string>();
+  const fromDefault = env.PW_MCP_CONNECT ? connectHost(env.PW_MCP_CONNECT) : undefined;
+  if (fromDefault) hosts.add(fromDefault);
+  for (const entry of (env.PW_MCP_CONNECT_HOSTS ?? '').split(',')) {
+    const value = entry.trim().toLowerCase();
+    if (!value) continue;
+    hosts.add(/^[a-z][a-z0-9+.-]*:\/\//.test(value) ? (connectHost(value) ?? value) : value);
+  }
+  return hosts;
+}
+
+/**
+ * An agent-chosen connect URL may only carry {{env:…}} secrets to a host the
+ * user named (PW_MCP_CONNECT, PW_MCP_CONNECT_HOSTS) or to this machine, so
+ * a prompt-injected page cannot have a grid key sent to its own server.
+ */
+function assertConnectSecretsStayHome(unresolved: string): void {
+  if (!/\{\{env:[A-Z0-9_]+\}\}/.test(unresolved)) return;
+  const host = connectHost(unresolved);
+  const hostname = host?.replace(/:\d+$/, '').replace(/^\[|\]$/g, '');
+  const local = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  const trusted = trustedConnectHosts();
+  if (host && (local || trusted.has(host) || (hostname !== undefined && trusted.has(hostname)))) return;
+  throw new PlaywrightMcpError(`Not sending {{env:…}} values to ${host ?? 'that address'}`, 'INVALID_INPUT', {
+    hint: 'Secrets in connect only go to hosts you named: set PW_MCP_CONNECT to that endpoint, or list its host in PW_MCP_CONNECT_HOSTS (comma separated).',
+  });
+}
+
 export function resolveConnect(input: string | undefined, ctx: Pick<ToolContext, 'restricted'>): ResolvedPageState['connect'] {
   const raw = (input ?? process.env.PW_MCP_CONNECT ?? '').trim();
   if (raw === '') return undefined;
@@ -593,7 +632,9 @@ export function resolveConnect(input: string | undefined, ctx: Pick<ToolContext,
     });
   }
   const cdp = /^cdp:/i.test(raw);
-  const url = resolveEnvTokens(cdp ? raw.slice(4).trim() : raw);
+  const unresolved = cdp ? raw.slice(4).trim() : raw;
+  if (input !== undefined) assertConnectSecretsStayHome(unresolved);
+  const url = resolveEnvTokens(unresolved);
   let parsed: URL;
   try {
     parsed = new URL(url);

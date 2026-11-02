@@ -1,0 +1,50 @@
+# playwright-e2e-mcp on Azure DevOps Pipelines.
+#
+# Copy this into azure-pipelines.yml at the repository root. It:
+#   - on a pull request, runs the heal guard: the job fails when a changed
+#     test now checks less (an assertion removed, a test skipped, `.only`);
+#   - runs the suite with `ci` (auto-retry once, flaky verdicts, drafted fixes
+#     re-run with --verify-fixes) and publishes the Markdown report and the
+#     Playwright HTML report as pipeline artifacts.
+#
+# Exit codes of `ci`: 0 passed (flaky allowed), 1 tests failed, 2 the run
+# itself failed (no Playwright, config error, timeout).
+
+trigger:
+  branches:
+    include: [main]
+pr:
+  branches:
+    include: ['*']
+
+pool:
+  vmImage: ubuntu-latest
+
+# Microsoft's Playwright image ships Node and the browsers. Use the tag that
+# matches the @playwright/test version in your package-lock.json.
+container: mcr.microsoft.com/playwright:v1.64.1-noble
+
+steps:
+  - checkout: self
+    fetchDepth: 0 # the guard compares with the target branch, so it needs history
+
+  - script: npm ci
+    displayName: Install dependencies
+
+  - script: |
+      TARGET="${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
+      git fetch --quiet origin "$TARGET"
+      npx -y playwright-e2e-mcp guard --base "origin/$TARGET"
+    displayName: Heal guard (pull requests)
+    condition: eq(variables['Build.Reason'], 'PullRequest')
+
+  - script: npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+    displayName: Run and diagnose Playwright tests
+
+  - publish: e2e-report.md
+    artifact: e2e-report
+    condition: succeededOrFailed()
+
+  - publish: playwright-report
+    artifact: playwright-report
+    condition: succeededOrFailed()

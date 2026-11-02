@@ -1,0 +1,39 @@
+# playwright-e2e-mcp on AWS CodeBuild.
+#
+# Copy this into buildspec.yml at the repository root. Use a standard Linux
+# image (aws/codebuild/standard:7.0 or newer) with a GitHub, GitLab or
+# Bitbucket source and webhook. It:
+#   - on a pull request build, runs the heal guard against the base branch:
+#     the build fails when a changed test now checks less (an assertion
+#     removed, a test skipped, `.only`);
+#   - runs the suite with `ci` (auto-retry once, flaky verdicts, drafted fixes
+#     re-run with --verify-fixes) and uploads the reports as build artifacts.
+#
+# Exit codes of `ci`: 0 passed (flaky allowed), 1 tests failed, 2 the run
+# itself failed (no Playwright, config error, timeout).
+
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - npm ci
+      - npx playwright install --with-deps chromium
+  build:
+    commands:
+      - |
+        if [ -n "$CODEBUILD_WEBHOOK_BASE_REF" ]; then
+          BASE="${CODEBUILD_WEBHOOK_BASE_REF#refs/heads/}"
+          git fetch --quiet --unshallow origin 2>/dev/null || true
+          git fetch --quiet origin "$BASE"
+          npx -y playwright-e2e-mcp guard --base "origin/$BASE"
+        fi
+      - npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+
+artifacts:
+  files:
+    - e2e-report.md
+    - playwright-report/**/*
+  name: playwright-e2e-$CODEBUILD_BUILD_NUMBER

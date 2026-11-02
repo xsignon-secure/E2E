@@ -1,0 +1,51 @@
+# playwright-e2e-mcp on CircleCI.
+#
+# Copy this into .circleci/config.yml. It:
+#   - on a branch with an open pull request, runs the heal guard against
+#     main: the job fails when a changed test now checks less (an assertion
+#     removed, a test skipped, `.only`). Change BASE_BRANCH if yours differs;
+#   - runs the suite with `ci` (auto-retry once, flaky verdicts, drafted fixes
+#     re-run with --verify-fixes) and stores the reports as artifacts.
+#
+# Exit codes of `ci`: 0 passed (flaky allowed), 1 tests failed, 2 the run
+# itself failed (no Playwright, config error, timeout).
+
+version: 2.1
+
+jobs:
+  playwright-e2e:
+    docker:
+      # Ships Node and the browsers. Match the @playwright/test version in
+      # your package-lock.json.
+      - image: mcr.microsoft.com/playwright:v1.64.1-noble
+    environment:
+      BASE_BRANCH: main
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - npm-{{ checksum "package-lock.json" }}
+      - run: npm ci
+      - save_cache:
+          key: npm-{{ checksum "package-lock.json" }}
+          paths:
+            - ~/.npm
+      - run:
+          name: Heal guard (pull requests)
+          command: |
+            if [ -n "$CIRCLE_PULL_REQUEST" ]; then
+              git fetch --quiet origin "$BASE_BRANCH"
+              npx -y playwright-e2e-mcp guard --base "origin/$BASE_BRANCH"
+            fi
+      - run:
+          name: Run and diagnose Playwright tests
+          command: npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+      - store_artifacts:
+          path: e2e-report.md
+      - store_artifacts:
+          path: playwright-report
+
+workflows:
+  e2e:
+    jobs:
+      - playwright-e2e

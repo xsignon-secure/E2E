@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.14.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.14.0/playwright-e2e-mcp-0.14.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.14.1` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.14.1/playwright-e2e-mcp-0.14.1.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -321,7 +321,8 @@ command for your setup. Upgrade notes for each release are on the
 
 - **Any browser, anywhere.** The page tools take `connect`: a Playwright server
   (`npx playwright run-server`), a browser grid or device cloud, or a Chrome over CDP. Keys stay
-  in the environment as `{{env:…}}`, never in chat.
+  in the environment as `{{env:…}}`, never in chat, and only go to hosts you named in
+  `PW_MCP_CONNECT` or `PW_MCP_CONNECT_HOSTS`.
 
   ```json
   { "url": "https://staging.example.com", "connect": "wss://grid.example.com/playwright?key={{env:E2E_GRID_KEY}}" }
@@ -348,7 +349,7 @@ command for your setup. Upgrade notes for each release are on the
 
 - **GitHub Action** that writes the diagnosis to the job summary, keeps one PR comment up to date
   and posts each verified fix as a **suggested change** reviewers apply with one click.
-- **GitLab CI** template and a plain `ci` command for Jenkins, CircleCI or anything else.
+- **CI templates** for GitHub Actions, GitLab, Azure DevOps, CircleCI, Bitbucket and AWS CodeBuild, and a plain `ci` command for anything else.
 - **Diagnose CI locally:** `load-report` maps a CI job's report and traces onto your checkout.
 
 ### 🌐 Page tools with locators that already work
@@ -447,7 +448,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.14.0
+  - uses: xsignon-secure/E2E@v0.14.1
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -455,9 +456,13 @@ steps:
 ```
 
 - **Ready-to-copy workflows:** [GitHub Actions](examples/github-actions/playwright-e2e.yml)
-  (artifact upload, heal guard, history server) and [GitLab CI](examples/gitlab-ci/playwright-e2e.yml)
-  (heal guard on merge requests and a merge request comment).
-- **Any other CI** (Jenkins, CircleCI, AWS CodeBuild): `npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --output report.md`.
+  (artifact upload, heal guard, history server), [GitLab CI](examples/gitlab-ci/playwright-e2e.yml)
+  (heal guard on merge requests and a merge request comment),
+  [Azure DevOps](examples/azure-pipelines/azure-pipelines.yml),
+  [CircleCI](examples/circleci/config.yml),
+  [Bitbucket Pipelines](examples/bitbucket-pipelines/bitbucket-pipelines.yml) and
+  [AWS CodeBuild](examples/aws-codebuild/buildspec.yml) (heal guard on pull requests, reports as artifacts).
+- **Any other CI** (Jenkins, Buildkite, TeamCity): `npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --output report.md`.
   Exit code `0` passed, `1` tests failed, `2` the run itself failed. Quarantined, unexpired
   failures don't fail it.
 - **Heal guard without the Action:** `npx -y playwright-e2e-mcp guard --base origin/main`
@@ -532,6 +537,7 @@ pip install pytest-playwright && playwright install chromium
 | `PW_MCP_SKILLS` | on | `0` stops serving the bundled agent skill over the MCP Skills extension (`skill://playwright-e2e-mcp/SKILL.md`) |
 | `PW_MCP_STORAGE_STATE` | — | Default `storageState` file (inside the project) for the page tools |
 | `PW_MCP_CONNECT` | — | Default remote browser for the page tools (same as `connect`): a Playwright server `ws(s)://…` endpoint (`npx playwright run-server`, Browserless, a device cloud's Playwright endpoint) or `cdp:` + a Chrome DevTools URL. `{{env:NAME}}` tokens in it are filled from the environment, so keys stay out of chat. Local server only; the HTTP bridge refuses it |
+| `PW_MCP_CONNECT_HOSTS` | — | Comma separated hosts (`grid.example.com`, `cloud.example.org:9443`) that a `connect` URL chosen by the agent may send `{{env:…}}` values to. `localhost` and the host of `PW_MCP_CONNECT` are always allowed |
 | `GITHUB_TOKEN` / `GITLAB_TOKEN` | — | Only for `load-report` with a GitHub Actions run or GitLab job URL: read access to the run's artifacts (`GH_TOKEN` and `CI_JOB_TOKEN` work too). Sent only to github.com, gitlab.com and the hosts in `PW_MCP_CI_HOSTS` |
 | `PW_MCP_CI_HOSTS` | — | Your GitHub Enterprise or self-managed GitLab hosts (comma separated) that `load-report` may send `GITHUB_TOKEN` / `GITLAB_TOKEN` to. Run URLs on any other host are refused |
 | `PW_MCP_PYTHON` | project venv, then `python3` | The Python that runs a pytest-playwright suite |
@@ -547,7 +553,7 @@ pip install pytest-playwright && playwright install chromium
 | `PW_MCP_MAX_FAILED_AUTH` | `20` | HTTP bridge only: wrong tokens or access keys one client address may send in 15 minutes before it gets `429` |
 | `PW_MCP_OAUTH_REDIRECT_HOSTS` | any https host | HTTP bridge only: comma-separated hosts OAuth apps may return to, e.g. `claude.ai,chatgpt.com`; `.example.com` covers subdomains; localhost always works |
 | `PW_MCP_OAUTH_CIMD` | `1` | HTTP bridge only: accept OAuth clients that identify with a Client ID Metadata Document (an https `client_id`, the MCP default since 2025-11-25); `0` accepts only dynamically registered clients |
-| `PW_MCP_TRUST_PROXY` | off (on for Vercel) | HTTP bridge only: `1` trusts `X-Real-IP` / `X-Forwarded-For` from a reverse proxy in front, so the sign-in limit counts per client, not per proxy |
+| `PW_MCP_TRUST_PROXY` | off (on for Vercel) | HTTP bridge only, so the sign-in limit counts per client, not per proxy. `1` (or `N` for N proxies in a row) reads the address the nearest proxy appended to `X-Forwarded-For`, counted from the right, so a client cannot forge it. `x-real-ip` reads `X-Real-IP` instead, for a proxy that overwrites that header (nginx `proxy_set_header X-Real-IP $remote_addr`) and does not append to `X-Forwarded-For` |
 | `PW_MCP_PASSTHROUGH_ENV` | — | HTTP bridge only: comma-separated extra variables passed to test runs (e.g. `BASE_URL`) |
 | `PW_MCP_MAX_CHILDREN` | `4` | HTTP bridge only: how many test runs and browser probes may run at once |
 | `PW_MCP_BLOCK_PRIVATE_URLS` | off (on for the HTTP bridge) | `1` makes the URL tools refuse loopback, private-network and cloud-metadata addresses, including redirects and subresources |
@@ -621,6 +627,10 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.14.1:** security fix: behind a reverse proxy the sign-in limit can no longer be dodged
+  with a forged `X-Forwarded-For`; `{{env:…}}` secrets in an agent-chosen `connect` URL only go
+  to hosts you named. CI templates for Azure DevOps, CircleCI, Bitbucket and AWS CodeBuild, and
+  `check-mocks` reads JSON bodies written as strings (`body='{"id": 1}'`).
 - **0.14:** `run-test` `changed: true` (only tests affected by your changes), `suggest-fix`
   `verifyAllProjects` (keep a fix only if every browser passes), `mask` for dynamic regions in
   `compare-visual-state`, `blockResources` and `offline` for page tools, and a guard when the
