@@ -19,7 +19,7 @@ import { toPlaywrightMcpError } from './types/index.js';
 import { logger } from './utils/logger.js';
 import { killActiveChildren } from './utils/playwright-runner.js';
 import { ConfirmationPending, createConfirmWrite } from './utils/confirm.js';
-import { createToolStore, toolError } from './tools/shared.js';
+import { createToolStore, isBroadRoot, toolError } from './tools/shared.js';
 import { appMetaFor, registerApps } from './apps/index.js';
 import { runTestTool } from './tools/run-test.js';
 import { getFailureTool } from './tools/get-failure.js';
@@ -435,6 +435,9 @@ export function resolveDefaultProjectRoot(): string {
     } catch {
       logger.warn('PW_MCP_PROJECT_ROOT does not exist; tool calls will fail until it does', { root });
     }
+  }
+  if (isBroadRoot(root)) {
+    logger.warn('The project root is your home folder or the filesystem root; set PW_MCP_PROJECT_ROOT (or the working directory in your MCP client config) to your project. Only project folders (not hidden ones) can be picked as projectRoot.', { root });
   }
   return root;
 }

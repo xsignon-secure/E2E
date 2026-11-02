@@ -7,7 +7,8 @@
  * the public surface documented in the README.)
  */
 
-import { readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import type {
@@ -139,6 +140,43 @@ export function allowedProjectRoots(defaultRoot: string): string[] {
 }
 
 /**
+ * True when `dir` is a home folder or a filesystem root: what the default
+ * root becomes when an MCP client starts the server without a working
+ * directory (Claude Desktop starts in / or the home folder). Everything
+ * under it would then be fair game for `projectRoot`.
+ */
+export function isBroadRoot(dir: string, home = os.homedir()): boolean {
+  const norm = (value: string) => {
+    const out = normalizePath(path.resolve(value)).replace(/\/+$/, '');
+    return process.platform === 'win32' ? out.toLowerCase() : out;
+  };
+  const target = norm(dir);
+  if (target === '' || /^[a-z]:$/i.test(target)) return true; // "/" or "C:/"
+  return home !== '' && target === norm(home);
+}
+
+/** Files that mark a directory as a test project (Node or Python). */
+const PROJECT_MARKERS = /^(package\.json|pyproject\.toml|pytest\.ini|setup\.cfg|tox\.ini|conftest\.py|playwright\.config\.[cm]?[jt]s)$/;
+
+/**
+ * Under a broad default root, only real project folders may be picked:
+ * no hidden directories (~/.ssh, ~/.aws, ~/.config) and something that
+ * looks like a Node or Python project, so a prompt-injected agent cannot
+ * point the tools at the user's whole home folder.
+ */
+async function assertProjectUnderBroadRoot(resolved: string, base: string): Promise<void> {
+  const relative = path.posix.relative(normalizePath(base), normalizePath(resolved));
+  const hint = 'The server was started in your home folder or the filesystem root. Set PW_MCP_PROJECT_ROOT (or the working directory in your MCP client config) to your project folder.';
+  if (relative === '' || relative.startsWith('..') || relative.split('/').some((segment) => segment.startsWith('.'))) {
+    throw new PlaywrightMcpError(`Project root ${resolved} is not a project folder`, 'INVALID_PATH', { hint });
+  }
+  const entries = await readdir(toNativePath(resolved)).catch(() => [] as string[]);
+  if (!entries.some((name) => PROJECT_MARKERS.test(name))) {
+    throw new PlaywrightMcpError(`Project root ${resolved} has no package.json, Playwright config or pytest config`, 'INVALID_PATH', { hint });
+  }
+}
+
+/**
  * Resolve the project root: defaults to the server's working directory;
  * an explicit value is resolved against it, must exist, and must sit
  * inside the default root or a PW_MCP_ALLOWED_ROOTS entry (symlinks
@@ -149,6 +187,9 @@ export async function resolveProjectRoot(
   ctx: ToolContext,
 ): Promise<string> {
   const base = normalizePath(ctx.projectRoot);
+  const broad = isBroadRoot(base);
+  // No projectRoot: the default root as it is (page tools on a URL need no
+  // project). An explicit one under a broad root must be a real project.
   if (input === undefined || input.trim() === '') return base;
   if (ctx.restricted) {
     throw new PlaywrightMcpError('projectRoot cannot be changed on this server', 'INVALID_PATH', {
@@ -168,6 +209,10 @@ export async function resolveProjectRoot(
     throw new PlaywrightMcpError(`Project root not found: ${resolved}`, 'INVALID_PATH', {
       hint: 'Pass `projectRoot` as an existing directory (absolute, or relative to the server working directory).',
     });
+  }
+  // A folder the user listed in PW_MCP_ALLOWED_ROOTS is trusted as it is.
+  if (broad && !allowed.slice(1).some((root) => isPathInside(resolved, root))) {
+    await assertProjectUnderBroadRoot(resolved, base);
   }
   for (const root of allowed) {
     if (!isPathInside(resolved, root)) continue;
