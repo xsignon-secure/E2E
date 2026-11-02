@@ -1,22 +1,22 @@
 # Token benchmark: diagnosing one drifted locator
 
-Run 2026-11-01 with playwright-e2e-mcp 0.9.0 and Playwright 1.64.1 (`playwright mcp`). Reproduce with `npm run build && node bench/token-benchmark.mjs`.
+Run 2026-11-02 with playwright-e2e-mcp 0.13.0 and Playwright 1.64.1 (`playwright mcp`). Reproduce with `npm run build && node bench/token-benchmark.mjs`.
 
 Scenario: a storefront page (navigation, search, 24 product cards, cart, footer) renamed its checkout button test id from `checkout-button` to `checkout-btn`; the spec still uses the old one. Tokens are estimated as characters ÷ 4 for both routes.
 
-The `core` column loads only the 7 tools in `PW_MCP_TOOLS=core` (or `--tools=core`); the all-tools column loads all 19. Tool definitions are sent with every request, so load only the profiles you use.
+The `core` column loads only the 7 tools in `PW_MCP_TOOLS=core` (or `--tools=core`); the all-tools column loads all 20. Tool definitions are sent with every request, so load only the profiles you use.
 
 | Step | playwright-e2e-mcp (`core` tools) | playwright-e2e-mcp (all tools) | Playwright MCP + shell |
 | --- | ---: | ---: | ---: |
-| Tool definitions the model reads (every request) | 2,266 | 11,480 | 4,558 |
+| Tool definitions the model reads (every request) | 2,323 | 12,053 | 4,558 |
 | Run the failing test | 257 | 257 | 323 |
 | Find the element / propose the fix | 232 | 232 | 2,286 |
 | Apply + verify (re-run) | 230 | 230 | 34 |
-| **Total for one fix** | 2,985 | 12,199 | 7,201 |
+| **Total for one fix** | 3,042 | 12,772 | 7,201 |
 
-Full `tools/list` on the wire, output schemas and annotations included: 4,788 (`core`), 15,898 (all tools), 5,225 (Playwright MCP).
+Full `tools/list` on the wire, output schemas and annotations included: 4,851 (`core`), 16,765 (all tools), 5,225 (Playwright MCP).
 
-With `--tools=auto` (the core loop plus `load-tools`, which turns on the other tools when the agent asks for them) the model starts with 2,427 tokens of tool definitions instead of 11,480.
+With `--tools=auto` (the core loop plus `load-tools`, which turns on the other tools when the agent asks for them) the model starts with 2,491 tokens of tool definitions instead of 12,053.
 
 Fixed and verified by playwright-e2e-mcp without an edit by the agent: **yes**.
 
@@ -37,8 +37,8 @@ Writing a new test starts with reading the page. The locator map lists verified 
 ```markdown
 ## 🔎 "Northwind Outfitters"
 
-**URL:** http://127.0.0.1:37935/  
-**Elements:** 140  |  **Viewport:** 1280×720  |  **Took:** 2464ms
+**URL:** http://127.0.0.1:46203/  
+**Elements:** 140  |  **Viewport:** 1280×720  |  **Took:** 4142ms
 
 ### Locator map (80 of 140 visible interactive elements, locators verified unique)
 
@@ -106,7 +106,7 @@ Writing a new test starts with reading the page. The locator map lists verified 
 
 ```markdown
 ### Page
-- Page URL: http://127.0.0.1:37935/
+- Page URL: http://127.0.0.1:46203/
 - Page Title: Northwind Outfitters
 ### Snapshot
 ```yaml

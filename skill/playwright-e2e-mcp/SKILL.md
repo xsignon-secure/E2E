@@ -13,7 +13,7 @@ and concrete next steps. It can also propose and apply a verified fix for a brok
 locator, inspect pages behind a login, run long suites in the background and keep
 a local history of every run.
 
-This skill is written for playwright-e2e-mcp 0.12.0 and works with 0.2.0 or
+This skill is written for playwright-e2e-mcp 0.13.0 and works with 0.2.0 or
 newer. If `suggest-fix`, `get-run-status` or `analyze-history` is missing, the
 server is older than 0.2.0: use the steps that do not need those tools and tell
 the user to update it. `diagnose-flaky`'s per-test table and `isolate` option
@@ -32,7 +32,8 @@ and sign-in with Client ID Metadata Documents arrived in 0.10.0; the compact
 `inspect-page` locator map as the default view and `load-tools` (`--tools=auto`)
 arrived in 0.11.0; `check-mocks`, the hydration notes in `inspect-page`,
 `get-failure` and `diagnose-flaky`, and `check-test-change`'s `runtime` option and
-pytest support arrived in 0.12.0. If a tool that
+pytest support arrived in 0.12.0; `load-report` with a CI run URL, `connect` and
+Python fixes in `suggest-fix` arrived in 0.13.0. If a tool that
 writes returns `declined: true`, the user said no: do not retry the write, show
 them the proposed change instead. If `doctor` says a newer version is out, pass its upgrade command on to
 the user.
@@ -191,7 +192,10 @@ against a live `url`.
 ## A failure from CI
 
 When the user asks why CI failed, do not re-run the whole suite locally first.
-Have the user (or `gh run download <run-id> -D ci-artifacts`) put the job's
+If they give a GitHub Actions run URL or a GitLab job URL (0.13.0+), pass it
+straight to `load-report` as `report`; it downloads the artifacts itself when
+`GITHUB_TOKEN` (or `GITLAB_TOKEN`) is set where the server starts, and says so
+when it is not. Otherwise have the user (or `gh run download <run-id> -D ci-artifacts`) put the job's
 report and its `test-results` artifact inside the project, then call
 `load-report` with `{ "report": "ci-artifacts/results.json" }` (a JSON report
 file, or the folder of blob-report zips from sharded jobs). It maps the CI paths
@@ -300,7 +304,7 @@ with the commit it tested. `analyze-history` views:
   `selector` for one region) returns the accessibility snapshot and a
   `toMatchAriaSnapshot` assertion to paste into a spec.
 - **Set up CI:** when the user wants the same diagnosis on every pull request,
-  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.12.0`) or the
+  point them to the GitHub Action (`uses: xsignon-secure/E2E@v0.13.0`) or the
   `npx -y playwright-e2e-mcp ci` command in `references/setup.md`. It writes the
   run, flaky verdicts and fix diffs to the job summary and one PR comment.
 - **Accessibility:** `audit-accessibility` with `url` runs axe-core against
@@ -321,7 +325,10 @@ with the commit it tested. `analyze-history` views:
   that these are lab numbers; field data can differ.
 - **Write or review a test:** follow `references/writing-tests.md` (locators,
   web-first assertions, auth setup, test data, network mocking, flake
-  patterns), with or without the server.
+  patterns, AI chat and streaming UIs), with or without the server.
+- **Remote browser or device cloud:** pass `connect` to the page tools (0.13.0+):
+  a Playwright `wss://` endpoint or `cdp:` + a DevTools URL. Put an access key in
+  the environment and write it as `{{env:E2E_GRID_KEY}}`, never in chat.
 - **Visual regression:** `compare-visual-state` with `url` and a `name`. The first
   call saves a baseline under `.pw-mcp/visual/`; later calls report changed
   regions and color shifts and write a diff image. Use `action: "baseline"` only

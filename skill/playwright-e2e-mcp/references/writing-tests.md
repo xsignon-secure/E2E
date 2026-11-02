@@ -157,6 +157,7 @@ on retry are what `get-failure` reads.
 | Fails only after certain tests | Order dependence | Own setup per test (`order: true` names the test) |
 | Wrong date or number format | Time zone or locale | Set `timezoneId`, `locale`, `page.clock` |
 | Click does nothing | Overlay, animation, or element not ready | Assert the overlay is gone; assert enabled |
+| Chat answer text differs or is cut off | Asserting mid-stream, or on live model wording | Mock the stream; wait for the done signal (§10) |
 
 Never fix flakiness with retries, longer timeouts or `waitForTimeout` alone.
 
@@ -175,13 +176,59 @@ Never fix flakiness with retries, longer timeouts or `waitForTimeout` alone.
 - For visual checks, `compare-visual-state` locally or `toHaveScreenshot()` in
   the suite, with animations disabled and dynamic content masked.
 
-## 10. Review checklist
+## 10. AI chat and streaming UIs
+
+Model output changes from run to run and arrives in pieces, so tests that
+assert on exact wording or on text mid-stream are flaky by design.
+
+- **Mock the model in most tests.** Fulfil the chat endpoint with a fixed
+  stream, so the UI code (rendering, markdown, tool calls, errors) is what is
+  tested:
+
+  ```ts
+  const sse = ['Hello', ', world', '!'].map((t) => `data: ${JSON.stringify({ delta: t })}\n\n`).join('') + 'data: [DONE]\n\n';
+  await page.route('**/api/chat', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/event-stream', body: sse }),
+  );
+  ```
+
+  For a socket transport use `page.routeWebSocket('**/ws', (ws) => …)` and
+  send the chunks with `ws.send()`. Run `check-mocks` so a mocked response
+  shape that drifted from the real API is caught.
+- **Wait for the end of the stream, not for text.** Assert on the signal the
+  UI gives when it is done: the stop button is gone, the send button is
+  enabled again, `aria-busy="false"`, or a `data-state="done"` marker you add
+  for tests:
+
+  ```ts
+  const answer = page.getByTestId('message').last();
+  await expect(page.getByRole('button', { name: 'Stop' })).toBeHidden();
+  await expect(answer).toHaveAttribute('aria-busy', 'false');
+  await expect(answer).toHaveText('Hello, world!');
+  ```
+
+  Never assert on a partial answer (`toContainText('Hel')`) and never
+  `waitForTimeout` until it "should" be done.
+- **Against a live model, assert on shape and meaning, not wording.** Check
+  that an answer appeared, is not an error, cites a source, renders a table,
+  or matches a loose regex (`/refund/i`). Keep live-model tests few, tag them
+  (`@live`) and run them apart from the main suite.
+- **Test the unhappy paths with mocks:** a 429 or 500 from the endpoint, a
+  stream cut off half-way (`body` without `[DONE]`), a very long answer, the
+  user pressing Stop, and sending a second message while the first streams.
+- **Give streaming its own timeout** on the final assertion
+  (`{ timeout: 30_000 }`) instead of raising the global one.
+- Auto-scroll, typing indicators and cursor blink make screenshots unstable;
+  mask them, or prefer `toMatchAriaSnapshot()` for the message list.
+
+## 11. Review checklist
 
 - [ ] Every locator is role, label, text or test id based, and unique.
 - [ ] No `waitForTimeout`, no assertions on one-off reads.
 - [ ] The test creates its own data and passes alone and in any order.
 - [ ] Sign-in comes from a saved session, credentials from the environment.
 - [ ] Third-party calls are mocked; time-dependent output is pinned.
+- [ ] Streaming or AI answers are asserted after the done signal, not mid-stream.
 - [ ] The test name describes the behavior; steps are grouped.
 - [ ] It ran green with `run-test`, and three times in a row with
       `diagnose-flaky` (`runs: 3`) before you call it done.

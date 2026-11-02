@@ -18,6 +18,9 @@ import type { GitInfo, RunTestResult, ToolContext, ToolResponse } from '../types
 import { parseReportJson } from '../utils/report-parser.js';
 import { childEnv, resolvePlaywrightCli, runProcess } from '../utils/playwright-runner.js';
 import { recordRun } from '../utils/run-history.js';
+import { serverlessChromiumEnabled } from '../utils/serverless-chromium.js';
+import { fetchCiRun, findReport, parseCiRunRef } from '../utils/ci-artifacts.js';
+import type { FetchedRun } from '../utils/ci-artifacts.js';
 import {
   assertRealPathInside,
   normalizePath,
@@ -35,7 +38,7 @@ const MAX_REPORT_BYTES = 200_000_000;
 const loadReportInput = z.object({
   report: z
     .string()
-    .describe('Playwright JSON report inside the project (e.g. ci-artifacts/results.json), or a folder of blob reports (*.zip) from sharded jobs'),
+    .describe('JSON report or blob-report folder inside the project, or a GitHub Actions run / GitLab job URL (needs GITHUB_TOKEN / GITLAB_TOKEN)'),
   traceDirs: z
     .array(z.string())
     .max(10)
@@ -92,7 +95,7 @@ async function mergeBlobReports(dir: string, root: string, ctx: ToolContext, tim
 export const loadReportTool = {
   name: 'load-report',
   description:
-    "Load a Playwright run that happened elsewhere (a CI job's JSON report, or a folder of blob reports from shards) so get-failure, suggest-fix and diagnose-flaky work on it like a local run. CI paths are mapped onto this checkout and traces are found in the unpacked test-results artifact; the run is recorded in the history with its commit.",
+    "Load a Playwright run that happened elsewhere (a CI job's JSON report, a folder of blob reports from shards, or a GitHub Actions / GitLab CI run URL) so get-failure, suggest-fix and diagnose-flaky work on it like a local run. CI paths are mapped onto this checkout and traces are found in the unpacked test-results artifact; the run is recorded in the history with its commit.",
   inputSchema: loadReportSchema,
   handler: async (args: LoadReportInput, ctx: ToolContext): Promise<ToolResponse> =>
     guard('load-report', async () => {
@@ -102,7 +105,29 @@ export const loadReportTool = {
         });
       }
       const root = await resolveProjectRoot(args.projectRoot, ctx);
-      const reportPath = normalizePath(sanitizeUserPath(args.report.trim(), root));
+      let fetched: FetchedRun | undefined;
+      let reportArg = args.report.trim();
+      const ciRef = parseCiRunRef(reportArg);
+      if (ciRef) {
+        if (serverlessChromiumEnabled()) {
+          throw new PlaywrightMcpError('Loading a CI run by URL is not available on this server', 'INVALID_INPUT', {
+            hint: 'Run playwright-e2e-mcp locally (npx playwright-e2e-mcp) to download CI artifacts into your checkout.',
+          });
+        }
+        fetched = await fetchCiRun(ciRef, root, ctx.signal);
+        const found = await findReport(fetched.dir);
+        if (!found) {
+          throw new PlaywrightMcpError(`No Playwright report in the run's artifacts (${fetched.artifacts.join(', ')})`, 'REPORT_MISSING', {
+            hint: 'Add the json reporter in CI (reporter: [["json", { outputFile: "results.json" }]]) or upload blob-report/, and upload it with the test-results/ folder.',
+          });
+        }
+        reportArg = found;
+      } else if (/^(https?|github|gitlab):\/\//i.test(reportArg)) {
+        throw new PlaywrightMcpError('Unrecognised CI URL', 'INVALID_INPUT', {
+          hint: 'Pass a GitHub Actions run URL (…/actions/runs/<id>) or a GitLab job URL (…/-/jobs/<id>), or a report path inside the project.',
+        });
+      }
+      const reportPath = normalizePath(sanitizeUserPath(reportArg, root));
       await assertRealPathInside(reportPath, root);
       const info = await stat(toNativePath(reportPath)).catch(() => null);
       if (!info) {
@@ -123,9 +148,10 @@ export const loadReportTool = {
         raw = await readFile(toNativePath(reportPath), 'utf8');
         source = `\`${relativeToRoot(root, reportPath)}\``;
       }
+      if (fetched) source += ` (downloaded from ${fetched.url || 'CI'}: ${fetched.artifacts.join(', ')})`;
 
       const traceDirs: string[] = [];
-      for (const dir of args.traceDirs ?? [parentOf(reportPath), parentOf(parentOf(reportPath))]) {
+      for (const dir of args.traceDirs ?? (fetched ? [fetched.dir] : [parentOf(reportPath), parentOf(parentOf(reportPath))])) {
         const resolved = normalizePath(args.traceDirs ? sanitizeUserPath(dir, root) : resolvePath(root, dir));
         try {
           await assertRealPathInside(resolved, root);
@@ -144,6 +170,9 @@ export const loadReportTool = {
 
       const git: GitInfo = {
         ...parsed.git,
+        ...(fetched?.commit ? { commit: fetched.commit } : {}),
+        ...(fetched?.branch ? { branch: fetched.branch } : {}),
+        ...(fetched?.url ? { buildUrl: fetched.url } : {}),
         ...(args.commit ? { commit: args.commit.trim() } : {}),
         ...(args.branch ? { branch: args.branch.trim() } : {}),
       };

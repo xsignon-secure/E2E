@@ -220,7 +220,7 @@ const ASYNC_MATCHERS =
 const PAGE_ACTIONS =
   /\.(goto|click|dblclick|fill|press|pressSequentially|type|check|uncheck|setChecked|selectOption|setInputFiles|hover|tap|focus|blur|clear|reload|goBack|goForward|waitForURL|waitForLoadState|dragTo|dragAndDrop|setViewportSize|screenshot)\(/;
 
-const TEST_TITLE = /\btest(?:\.(?:only|fixme|skip|slow|fail))?\(\s*(['"`])((?:\\.|(?!\1).)+)\1/;
+const TEST_TITLE = /\btest(?:\.(?:only|fixme|skip|slow|fail))?\(\s*(['"`])((?:\\.|(?!\1)[^\\])+)\1/;
 
 function selectorRisk(selector: string): boolean {
   const s = selector.trim();
@@ -343,7 +343,7 @@ export function scanFlakeRisks(file: string, source: string, options: FlakeScanO
     if (/\bforce\s*:\s*true\b/.test(code)) add(i, 'force-action');
     if (/['"`]networkidle['"`]/.test(code)) add(i, 'networkidle');
     if (/\bpage\.(\$|\$\$|\$eval|\$\$eval)\(|\.waitForSelector\(|\.elementHandles?\(/.test(code)) add(i, 'element-handle');
-    for (const m of code.matchAll(/(?:\.locator|\.\$\$?|waitForSelector)\(\s*(['"`])((?:\\.|(?!\1).)+)\1/g)) {
+    for (const m of code.matchAll(/(?:\.locator|\.\$\$?|waitForSelector)\(\s*(['"`])((?:\\.|(?!\1)[^\\])+)\1/g)) {
       if (selectorRisk(m[2])) {
         add(i, 'fragile-selector');
         break;
