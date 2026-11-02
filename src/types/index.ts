@@ -301,6 +301,11 @@ export interface RunTestOptions {
    * previous run — the fast fix → re-run loop.
    */
   lastFailed?: boolean;
+  /**
+   * Playwright --only-changed: run only test files affected by changes since
+   * a git ref (true = uncommitted changes against HEAD), following imports.
+   */
+  changed?: boolean | string;
   /** Playwright --repeat-each: run every selected test N times in one process. */
   repeatEach?: number;
   /**
@@ -425,6 +430,8 @@ export interface RunTestResult {
   autoRetry?: boolean;
   /** Run was restricted to previously failed tests (--last-failed). */
   lastFailed?: boolean;
+  /** Run was restricted to files affected by changes (--only-changed); the ref, or 'HEAD'. */
+  changed?: string;
   errorKind?: ErrorKind;
   errorMessage?: string;
   hint?: string;

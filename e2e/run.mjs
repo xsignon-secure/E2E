@@ -832,6 +832,9 @@ async function phaseTestRuns(client, origin) {
     'pass.spec.ts appeared in the --last-failed run output',
   );
 
+  const badRef = await callTool(client, 'run-test', { changed: '--output=/tmp/x' }, 30_000);
+  contains('changed refuses an option-shaped git ref', badRef.text, 'changed must be true or a git ref');
+
   // No testFiles → the target comes from the stored failure's file path;
   // this proves the parser rebase (tests/fail.spec.ts, not fail.spec.ts)
   // flows into the default targeting and covers the third verdict.
