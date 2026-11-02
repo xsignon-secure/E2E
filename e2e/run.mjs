@@ -485,7 +485,7 @@ async function phaseHandshake(client, pkg) {
   const withSchema = tools.filter((tool) => tool.outputSchema?.type === 'object').map((tool) => tool.name).sort();
   check(
     'the chained tools declare output schemas',
-    JSON.stringify(withSchema) === JSON.stringify(['audit-accessibility', 'audit-performance', 'audit-tests', 'bisect-failure', 'check-test-change', 'diagnose-flaky', 'get-failure', 'get-run-status', 'list-tests', 'quarantine', 'run-test', 'save-login', 'suggest-fix', 'validate-selector']),
+    JSON.stringify(withSchema) === JSON.stringify(['audit-accessibility', 'audit-performance', 'audit-tests', 'bisect-failure', 'check-mocks', 'check-test-change', 'diagnose-flaky', 'get-failure', 'get-run-status', 'list-tests', 'quarantine', 'run-test', 'save-login', 'suggest-fix', 'validate-selector']),
     `got ${JSON.stringify(withSchema)}`,
   );
 }
