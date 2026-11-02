@@ -39,6 +39,9 @@ test('Python locators convert to TypeScript and back', () => {
   assert.equal(readPythonChain('get_by_text(re.compile(r"total", re.IGNORECASE))', 0).ts, 'getByText(/total/i)');
   assert.equal(formatPythonLocator(parseLocator("getByTestId('checkout').locator('span')")), 'get_by_test_id("checkout").locator("span")');
   assert.match(pythonMessageToTs('waiting for get_by_test_id("checkout-button")'), /getByTestId\('checkout-button'\)/);
+  assert.equal(readPythonChain(String.raw`get_by_text("It's \"ok\" \\ done")`, 0).ts, String.raw`getByText('It\'s "ok" \\ done')`);
+  assert.equal(readPythonChain(String.raw`get_by_text(re.compile(r"a/b\/c\d"))`, 0).ts, String.raw`getByText(/a\/b\/c\d/)`);
+  assert.equal(readPythonChain(String.raw`locator(r"\d+")`, 0).ts, String.raw`locator('\\d+')`);
   const line = '    page.get_by_test_id("checkout-button").click()';
   const span = findPythonChainSpan(line, parseLocator("getByTestId('checkout-button')"));
   assert.equal(line.slice(span.start, span.end), 'get_by_test_id("checkout-button")');

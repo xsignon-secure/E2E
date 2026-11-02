@@ -67,15 +67,28 @@ function splitArgs(text: string): string[] {
   return out.map((part) => part.trim());
 }
 
+/** The value of a Python string literal's body (`raw` for r"…"). */
+function decodePyString(body: string, raw: boolean): string {
+  if (raw) return body;
+  const simple: Record<string, string> = { n: '\n', t: '\t', r: '\r', '\\': '\\', "'": "'", '"': '"' };
+  return body.replace(/\\(.)/g, (all, ch: string) => simple[ch] ?? all);
+}
+
+/** A string as a single-quoted TypeScript literal. */
+function tsString(value: string): string {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t')}'`;
+}
+
 /** One Python value as TypeScript source. */
 function valueToTs(value: string): string {
   const v = value.trim();
   if (v === 'True') return 'true';
   if (v === 'False') return 'false';
   const re = /^re\.compile\(\s*r?(["'])((?:\\.|(?!\1)[^\\])*)\1\s*(?:,\s*re\.(IGNORECASE|I))?\s*\)$/.exec(v);
-  if (re) return `/${re[2].replace(/\//g, '\\/')}/${re[3] ? 'i' : ''}`;
-  const str = /^r?(["'])((?:\\.|(?!\1)[^\\])*)\1$/.exec(v);
-  if (str) return `'${str[2].replace(/\\(["'])/g, '$1').replace(/'/g, "\\'")}'`;
+  // Regex source keeps its escapes; only a bare "/" needs one in a /…/ literal.
+  if (re) return `/${re[2].replace(/\\.|\//g, (m) => (m === '/' ? '\\/' : m))}/${re[3] ? 'i' : ''}`;
+  const str = /^(r?)(["'])((?:\\.|(?!\2)[^\\])*)\2$/.exec(v);
+  if (str) return tsString(decodePyString(str[3], str[1] === 'r'));
   return v;
 }
 
