@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { detectProject, findTestFiles } from '../utils/project-detector.js';
-import { SERVER_VERSION } from '../server.js';
+import { SERVER_VERSION, TOOL_PROFILES, estimateToolTokens, resolveToolSelection } from '../server.js';
 import { SERVER_NAME, SKILL_NAME } from './init.js';
 import { checkForUpdate, UPGRADE_HINT, type UpdateCheckOptions } from '../utils/update-check.js';
 
@@ -150,6 +150,33 @@ export async function versionCheck(options: UpdateCheckOptions = {}): Promise<Do
   }
 }
 
+/**
+ * Shows how many tools the current PW_MCP_TOOLS setting exposes and roughly
+ * how many tokens they cost the model per request (characters ÷ 4). When all
+ * tools are loaded, warns and suggests the core profile.
+ */
+export function toolsCheck(toolsSpec = process.env.PW_MCP_TOOLS): DoctorCheck {
+  const resolved = resolveToolSelection(toolsSpec);
+  const total = TOOL_PROFILES.all.length;
+  const exposed = resolved.tools ?? TOOL_PROFILES.all;
+  const count = exposed.length;
+  const tokens = estimateToolTokens(exposed);
+  const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
+  if (count >= total) {
+    return {
+      name: 'Tools',
+      status: 'warn',
+      detail: `${count} tools exposed (${tokenStr} tokens / request)`,
+      fix: 'Pass --tools=core (or set PW_MCP_TOOLS=core) to save tokens',
+    };
+  }
+  return {
+    name: 'Tools',
+    status: 'ok',
+    detail: `${count} tools exposed (${tokenStr} tokens / request)`,
+  };
+}
+
 export interface DoctorOptions {
   /** Options for the npm version check; `{ offline: true }` skips it. */
   update?: UpdateCheckOptions;
@@ -224,6 +251,8 @@ export async function runDoctorChecks(projectRoot: string, home = os.homedir(), 
       ? { name: 'Agent skill', status: 'ok', detail: path.relative(projectRoot, skill) }
       : { name: 'Agent skill', status: 'warn', detail: 'not installed in this project', fix: 'npx -y playwright-e2e-mcp init' },
   );
+
+  checks.push(toolsCheck());
 
   return { version: SERVER_VERSION, projectRoot, checks, ok: !checks.some((c) => c.status === 'fail') };
 }
