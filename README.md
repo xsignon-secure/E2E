@@ -138,7 +138,7 @@ or go to **Settings → MCP → Add new MCP server** and paste the standard conf
 project only, put it in `.cursor/mcp.json`.
 
 Only fixing failing tests? [Install the core tools only](https://cursor.com/en/install-mcp?name=playwright-e2e&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsInBsYXl3cmlnaHQtZTJlLW1jcCIsIi0tdG9vbHM9Y29yZSJdfQ==): the seven-tool fix loop
-(`--tools=core`), about 2.3k tokens of tool definitions instead of 12.1k.
+(`--tools=core`), about 2.4k tokens of tool definitions instead of 12.8k.
 
 </details>
 
@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.15.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.15.0/playwright-e2e-mcp-0.15.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.16.0` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.16.0/playwright-e2e-mcp-0.16.0.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -367,8 +367,8 @@ command for your setup. Upgrade notes for each release are on the
 
 ### 🚀 Built for agents in 2026
 
-- **Lean on context.** Start with `--tools=auto` (about 2.4k tokens of tool definitions instead of
-  12.1k) and the agent loads the page, audit or history tools when it needs them, or pick a
+- **Lean on context.** Start with `--tools=auto` (about 2.6k tokens of tool definitions instead of
+  12.8k) and the agent loads the page, audit or history tools when it needs them, or pick a
   profile: `core`, `triage`, `inspect`, `author`.
 - **Interactive test report** in MCP Apps clients (Claude, ChatGPT, Cursor): filter failures, see
   expected vs. received, re-run or "Ask to fix" in one click.
@@ -448,7 +448,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.15.0
+  - uses: xsignon-secure/E2E@v0.16.0
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -528,8 +528,8 @@ pip install pytest-playwright && playwright install chromium
 ## ⚙️ Configuration
 
 **Pick your tools.** `--tools=` (or `PW_MCP_TOOLS`) takes profiles and tool names:
-`auto` (core loop plus `load-tools`, about 2.4k tokens), `core` (the seven-tool fix loop, about
-2.3k), `triage`, `inspect`, `author`, or all twenty (about 12.1k, the default).
+`auto` (core loop plus `load-tools`, about 2.6k tokens), `core` (the seven-tool fix loop, about
+2.4k), `triage`, `inspect`, `author`, or all twenty (about 12.8k, the default).
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -537,7 +537,7 @@ pip install pytest-playwright && playwright install chromium
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `PW_MCP_PROJECT_ROOT` | server cwd | Default project root for every tool |
-| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, mock check, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard, mock check). `auto` starts with the core loop (or the tools listed with it, e.g. `auto,inspect`) plus a `load-tools` tool the agent calls to turn on more tools for the session; the client is told the tool list changed. `auto` needs a client that refreshes its tool list (Claude Code, Cursor, VS Code); over the hosted HTTP endpoint it lists every tool. All twenty tool definitions cost the model about 12.1k tokens per request and `core` about 2.3k (the full `tools/list`, with output schemas most clients do not show the model, is about 16.8k and 4.9k) |
+| `PW_MCP_TOOLS` | all | Which tools to expose, as tool names and/or profiles, comma separated (same as the `--tools=` flag). Profiles: `core` (run, status, failure, fix, flaky, heal guard, list), `triage` (run, status, failure, CI report, flaky, history, test audit, bisect, quarantine, heal guard, mock check, list), `inspect` (page, selector, accessibility, performance, visual, login), `author` (list, page, selector, generate, run, login, heal guard, mock check). `auto` starts with the core loop (or the tools listed with it, e.g. `auto,inspect`) plus a `load-tools` tool the agent calls to turn on more tools for the session; the client is told the tool list changed. `auto` needs a client that refreshes its tool list (Claude Code, Cursor, VS Code); over the hosted HTTP endpoint it lists every tool. All twenty tool definitions cost the model about 12.8k tokens per request and `core` about 2.4k (the full `tools/list`, with output schemas most clients do not show the model, is about 17.5k and 5.0k) |
 | `PW_MCP_OUTPUT_SCHEMAS` | on | `0` leaves the output schemas out of the tool list to save context. Results still carry `structuredContent` (see [Structured results](docs/tools.md#structured-results)) |
 | `PW_MCP_PROTOCOL` | both | `legacy` stops offering the stateless 2026-07-28 MCP revision, for a client that trips over it. By default 2026 clients get it and 2025 clients get the old handshake |
 | `PW_MCP_NO_UPDATE_CHECK` | off | `1` stops `doctor` from asking npm whether a newer version is out (same as `doctor --offline`) |
@@ -585,11 +585,11 @@ re-run). Latest result ([full output](bench/RESULTS.md)):
 
 | Step | playwright-e2e-mcp (`core` tools) | playwright-e2e-mcp (all tools) | Playwright MCP + shell |
 | --- | ---: | ---: | ---: |
-| Tool definitions the model reads (every request) | 2,266 | 11,480 | 4,558 |
+| Tool definitions the model reads (every request) | 2,433 | 12,762 | 4,558 |
 | Run the failing test | 257 | 257 | 323 |
 | Find the element / propose the fix | 232 | 232 | 2,286 |
-| Apply + verify (re-run) | 230 | 230 | 34 |
-| **Total for one fix** | **2,985** | 12,199 | 7,201 |
+| Apply + verify (re-run) | 255 | 255 | 34 |
+| **Total for one fix** | **3,177** | 13,506 | 7,201 |
 
 | Looking at the storefront page | Tokens |
 | --- | ---: |
@@ -599,9 +599,9 @@ re-run). Latest result ([full output](bench/RESULTS.md)):
 Tokens are characters ÷ 4 and count what the model reads (each tool's name, description and input
 schema). Tool definitions are sent with every request, so with all 20 tools loaded they outweigh
 the saving on the work itself: use `--tools=core` when you only fix failing tests, or
-`--tools=auto` to start at 2,427 tokens and load more on request. The Playwright MCP route is a
+`--tools=auto` to start at 2,601 tokens and load more on request. The Playwright MCP route is a
 lower bound: it assumes the agent picks the right locator from the snapshot on the first try,
-which the server does for it here. Run 2026-11-01 with Playwright 1.64.1; re-run with
+which the server does for it here. Run 2026-11-10 with 0.16.0 and Playwright 1.64.1; re-run with
 `npm run build && node bench/token-benchmark.mjs`.
 
 <details>
@@ -636,6 +636,8 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.16:** `doctor` shows how many tools your client config loads and what their definitions
+  cost in tokens per request, and suggests `--tools=core` or `--tools=auto` when all are loaded.
 - **0.15:** pytest-playwright suites get `diagnose-flaky` (with pytest-xdist for `isolate`),
   `audit-tests` (Python flake rules and `expect(...)` rewrites) and `generate-e2e-test`
   (writes and verifies `test_*.py`). `-n` runs no longer count each pytest result twice.

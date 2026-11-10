@@ -29,13 +29,13 @@ for projects without Node Playwright, such as pytest-playwright suites and the D
 ## 1. Tool definitions cost tokens on every request
 
 An MCP client sends every tool's name, description and input schema with every model
-request. All twenty tools cost about 12.1k tokens; that is paid again on each turn, whether or
+request. All twenty tools cost about 12.8k tokens; that is paid again on each turn, whether or
 not a tool is called.
 
 Decisions that follow from this:
 
 - **Profiles.** `--tools=core` (or `PW_MCP_TOOLS=core`) loads only the seven tools of the fix
-  loop (run, status, failure, fix, flaky, heal guard, list), about 2.3k tokens. `triage`,
+  loop (run, status, failure, fix, flaky, heal guard, list), about 2.4k tokens. `triage`,
   `inspect` and `author` cover the other jobs. Profiles are resolved in `resolveToolSelection`
   in `src/server.ts`.
 - **Load on request.** `--tools=auto` registers every tool but lists only the core loop and
