@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderDoctorReport, runDoctor, runDoctorChecks } from '../dist/cli/doctor.js';
+import { renderDoctorReport, runDoctor, runDoctorChecks, toolsCheck } from '../dist/cli/doctor.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -76,5 +76,40 @@ test('runDoctor prints JSON, exits 1 on a failure and 2 on bad arguments', async
     assert.equal(await runDoctor(['--bogus'], () => undefined), 2);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tools check warns when all tools are exposed and suggests core profile', async () => {
+  const root = tempProject();
+  const home = tempProject();
+  const orig = process.env.PW_MCP_TOOLS;
+  try {
+    delete process.env.PW_MCP_TOOLS;
+    const defaultCheck = toolsCheck();
+    assert.equal(defaultCheck.name, 'Tools');
+    assert.equal(defaultCheck.status, 'warn');
+    assert.match(defaultCheck.detail, /20 tools exposed/);
+    assert.match(defaultCheck.detail, /tokens \/ request/);
+    assert.match(defaultCheck.fix, /--tools=core/);
+
+    const coreCheck = toolsCheck('core');
+    assert.equal(coreCheck.status, 'ok');
+    assert.match(coreCheck.detail, /7 tools exposed/);
+    assert.match(coreCheck.detail, /tokens \/ request/);
+    assert.equal(coreCheck.fix, undefined);
+
+    // Verify integration inside runDoctorChecks
+    delete process.env.PW_MCP_TOOLS;
+    const reportAll = await runDoctorChecks(root, home, { update: { offline: true } });
+    assert.equal(byName(reportAll, 'Tools').status, 'warn');
+
+    process.env.PW_MCP_TOOLS = 'core';
+    const reportCore = await runDoctorChecks(root, home, { update: { offline: true } });
+    assert.equal(byName(reportCore, 'Tools').status, 'ok');
+  } finally {
+    if (orig !== undefined) process.env.PW_MCP_TOOLS = orig;
+    else delete process.env.PW_MCP_TOOLS;
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   }
 });
