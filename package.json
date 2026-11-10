@@ -60,7 +60,7 @@
     "prepare": "npm run build",
     "watch": "tsc -p tsconfig.json --watch",
     "test": "npm run build && node test/run-tests.mjs",
-    "coverage": "npm run build && node test/run-tests.mjs --coverage",
+    "coverage": "npm run build && c8 node test/run-tests.mjs",
     "e2e": "npm run build && node e2e/run.mjs",
     "mcpb": "npm run build && node scripts/build-mcpb.mjs",
     "mcpb:smoke": "npm run mcpb && node scripts/mcpb-launch-sim.mjs && node scripts/mcpb-client-check.mjs",
@@ -88,6 +88,7 @@
     "@playwright/test": "1.65.0",
     "@sparticuz/chromium": "153.0.0",
     "@types/node": "^26.6.5",
+    "c8": "^12.0.0",
     "typescript": "^7.0.2"
   },
   "overrides": {

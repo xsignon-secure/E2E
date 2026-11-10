@@ -29,7 +29,8 @@ jobs:
       - run: npm ci
       - run: npm test
         if: ${{ !(matrix.os == 'ubuntu-latest' && matrix.node == 24) }}
-      # One leg also reports coverage (unit tests only; e2e runs in children).
+      # One leg also reports coverage, including the servers the tests spawn
+      # (c8, see .c8rc.json), and fails below the floor there.
       - run: npm run coverage
         if: ${{ matrix.os == 'ubuntu-latest' && matrix.node == 24 }}
 
