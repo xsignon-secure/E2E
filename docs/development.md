@@ -163,8 +163,8 @@ job requests for itself; if it is refused, the run names the setting to change.
 ## Verifying a published release
 
 ```bash
-git checkout v0.15.0 && npm ci && npm run mcpb
-npm run release:verify -- v0.15.0
+git checkout v0.16.0 && npm ci && npm run mcpb
+npm run release:verify -- v0.16.0
 ```
 
 The release notes promise that the tag rebuilds the published bundle byte for
