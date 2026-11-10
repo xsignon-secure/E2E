@@ -32,7 +32,8 @@ test('the pytest-playwright CI job pins Python playwright to playwright-core', (
   const ci = read('.github/workflows/ci.yml');
   const pip = /pip" install[^\n]*/.exec(ci)?.[0] ?? '';
   assert.match(pip, /pytest-playwright==\d/, 'pytest-playwright must be pinned');
-  assert.match(pip, new RegExp(`playwright==${playwright.replace(/\./g, '\\.')}(\\s|$)`), `playwright must be pinned to ${playwright}`);
+  const pinned = /(?:^|\s)playwright==(\S+)/.exec(pip)?.[1];
+  assert.equal(pinned, playwright, `playwright must be pinned to ${playwright}`);
 });
 
 const examples = readdirSync(new URL('../examples', import.meta.url), { withFileTypes: true })

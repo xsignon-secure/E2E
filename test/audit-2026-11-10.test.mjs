@@ -55,7 +55,7 @@ test('withheld variables never reach children unless passed through', () => {
     assert.equal(env.GH_TOKEN, undefined);
     assert.equal(env.GITHUB_TOKEN, undefined);
     assert.equal(env.FORCE_COLOR, '0');
-    assert.ok(env.PATH, 'everything else still passes');
+    assert.ok(Object.keys(env).some((key) => key.toUpperCase() === 'PATH'), 'everything else still passes (Windows spells it Path)');
     assert.equal(process.env.GH_TOKEN, 'ghs_write_token', 'the parent keeps it for the PR review');
     process.env.PW_MCP_PASSTHROUGH_ENV = 'GITHUB_TOKEN';
     assert.equal(childEnv().GITHUB_TOKEN, 'ghs_write_token', 'a user can opt back in');
