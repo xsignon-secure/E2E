@@ -431,11 +431,25 @@ function keepInScrubbedEnv(key: string, value: string | undefined, passthrough: 
   return CHILD_ENV_ALLOW.has(upper) || CHILD_ENV_ALLOW_PREFIXES.some((prefix) => upper.startsWith(prefix));
 }
 
+/** Names kept from every child even without scrubbing (see withholdFromChildren). */
+const withheld = new Set<string>();
+
+/**
+ * Keep these variables out of every child this process spawns, unless
+ * PW_MCP_PASSTHROUGH_ENV names them. `playwright-e2e-mcp ci` withholds the
+ * GitHub token it needs for PR comments, so the test code a pull request
+ * changed never sees a token that can write to the repository.
+ */
+export function withholdFromChildren(names: readonly string[]): void {
+  for (const name of names) withheld.add(name.toUpperCase());
+}
+
 /** Environment for a spawned child: process.env plus overrides, allowlisted when scrubbing. */
 export function childEnv(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  const passthrough = scrubChildEnv ? passthroughNames() : new Set<string>();
+  const passthrough = scrubChildEnv || withheld.size > 0 ? passthroughNames() : new Set<string>();
   for (const [key, value] of Object.entries(process.env)) {
+    if (withheld.has(key.toUpperCase()) && !passthrough.has(key.toUpperCase())) continue;
     if (scrubChildEnv && !keepInScrubbedEnv(key, value, passthrough)) continue;
     env[key] = value;
   }

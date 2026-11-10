@@ -16,6 +16,7 @@ import { parseArgs } from 'node:util';
 import type { ToolContext, ToolResponse } from '../types/index.js';
 import { createLogger } from '../utils/logger.js';
 import { createToolStore } from '../tools/shared.js';
+import { withholdFromChildren } from '../utils/playwright-runner.js';
 import { runTestTool } from '../tools/run-test.js';
 import { diagnoseFlakyTool } from '../tools/diagnose-flaky.js';
 import { suggestFixTool } from '../tools/suggest-fix.js';
@@ -148,6 +149,9 @@ export async function runCi(argv: string[]): Promise<number> {
     process.stderr.write(`${(err as Error).message}\n\n${CI_USAGE}`);
     return 2;
   }
+
+  // The token is for posting the review; the tests a PR changed must not get it.
+  withholdFromChildren(['GITHUB_TOKEN', 'GH_TOKEN']);
 
   const projectRoot = options.projectRoot ?? process.env.PW_MCP_PROJECT_ROOT ?? process.cwd();
   const ctx: ToolContext = {
