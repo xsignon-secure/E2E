@@ -69,7 +69,7 @@ alone:
 
 ```bash
 npx -y playwright-e2e-mcp init      # --client all | cursor,vscode … · --dry-run
-npx -y playwright-e2e-mcp doctor    # checks Node, Playwright, browsers, client setup and updates
+npx -y playwright-e2e-mcp doctor    # checks Node, Playwright, browsers, client setup, tool token cost and updates
 ```
 
 Then restart your client and ask:
