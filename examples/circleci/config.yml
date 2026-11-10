@@ -35,11 +35,11 @@ jobs:
           command: |
             if [ -n "$CIRCLE_PULL_REQUEST" ]; then
               git fetch --quiet origin "$BASE_BRANCH"
-              npx -y playwright-e2e-mcp@0.16.0 guard --base "origin/$BASE_BRANCH"
+              npx -y playwright-e2e-mcp@0.16.1 guard --base "origin/$BASE_BRANCH"
             fi
       - run:
           name: Run and diagnose Playwright tests
-          command: npx -y playwright-e2e-mcp@0.16.0 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+          command: npx -y playwright-e2e-mcp@0.16.1 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
       - store_artifacts:
           path: e2e-report.md
       - store_artifacts:

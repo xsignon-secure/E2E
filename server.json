@@ -3,7 +3,7 @@
   "name": "io.github.xsignon-secure/E2E",
   "title": "Playwright E2E MCP",
   "description": "Diagnose and fix Playwright tests (TS, pytest): CI reports, traces, verified fixes, flaky verdicts.",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "websiteUrl": "https://github.com/xsignon-secure/E2E#readme",
   "repository": {
     "source": "github",
@@ -23,7 +23,7 @@
     {
       "registryType": "npm",
       "identifier": "playwright-e2e-mcp",
-      "version": "0.16.0",
+      "version": "0.16.1",
       "transport": {
         "type": "stdio"
       }
