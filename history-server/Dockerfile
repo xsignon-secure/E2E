@@ -1,7 +1,7 @@
 # Self-hosted history server for playwright-e2e-mcp.
 #   docker build -t pw-history history-server
 #   docker run -p 8787:8787 -e HISTORY_TOKENS=web:<token> -v pw-history:/data pw-history
-FROM node:22-alpine
+FROM node:26-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
