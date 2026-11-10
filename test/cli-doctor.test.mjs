@@ -4,7 +4,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderDoctorReport, runDoctor, runDoctorChecks, toolsCheck } from '../dist/cli/doctor.js';
+import { renderDoctorReport, runDoctor, runDoctorChecks, toolsCheck, toolsSettingIn } from '../dist/cli/doctor.js';
+import { TOOL_PROFILES } from '../dist/server.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -79,27 +80,38 @@ test('runDoctor prints JSON, exits 1 on a failure and 2 on bad arguments', async
   }
 });
 
-test('tools check warns when all tools are exposed and suggests core profile', async () => {
+test('tools check warns when all tools are exposed and suggests a profile', async () => {
   const root = tempProject();
   const home = tempProject();
   const orig = process.env.PW_MCP_TOOLS;
+  const total = TOOL_PROFILES.all.length;
   try {
     delete process.env.PW_MCP_TOOLS;
     const defaultCheck = toolsCheck();
     assert.equal(defaultCheck.name, 'Tools');
     assert.equal(defaultCheck.status, 'warn');
-    assert.match(defaultCheck.detail, /20 tools exposed/);
+    assert.match(defaultCheck.detail, new RegExp(`^${total}/${total} tools exposed`));
     assert.match(defaultCheck.detail, /tokens \/ request/);
     assert.match(defaultCheck.fix, /--tools=core/);
 
     const coreCheck = toolsCheck('core');
     assert.equal(coreCheck.status, 'ok');
-    assert.match(coreCheck.detail, /7 tools exposed/);
-    assert.match(coreCheck.detail, /tokens \/ request/);
+    assert.match(coreCheck.detail, new RegExp(`^${TOOL_PROFILES.core.length}/${total} tools exposed`));
+    assert.match(coreCheck.detail, /core from PW_MCP_TOOLS/);
     assert.equal(coreCheck.fix, undefined);
 
-    // Verify integration inside runDoctorChecks
-    delete process.env.PW_MCP_TOOLS;
+    assert.match(toolsCheck('auto').detail, /tools \+ load-tools exposed/);
+    const typo = toolsCheck('core,nope');
+    assert.equal(typo.status, 'warn');
+    assert.match(typo.fix, /nope/);
+
+    // Fewer tools cost fewer tokens.
+    const tokensOf = (check) => {
+      const [, n, k] = /~([\d.]+)(k?) tokens/.exec(check.detail);
+      return Number(n) * (k ? 1000 : 1);
+    };
+    assert.ok(tokensOf(coreCheck) < tokensOf(defaultCheck));
+
     const reportAll = await runDoctorChecks(root, home, { update: { offline: true } });
     assert.equal(byName(reportAll, 'Tools').status, 'warn');
 
@@ -112,4 +124,47 @@ test('tools check warns when all tools are exposed and suggests core profile', a
     rmSync(root, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('tools check reads the setting from a client config', async () => {
+  const root = tempProject();
+  const home = tempProject();
+  const orig = process.env.PW_MCP_TOOLS;
+  try {
+    delete process.env.PW_MCP_TOOLS;
+    writeFileSync(
+      path.join(root, '.mcp.json'),
+      JSON.stringify({ mcpServers: { 'playwright-e2e': { command: 'npx', args: ['-y', 'playwright-e2e-mcp', '--tools=core'] } } }),
+    );
+    let check = byName(await runDoctorChecks(root, home, { update: { offline: true } }), 'Tools');
+    assert.equal(check.status, 'ok');
+    assert.match(check.detail, /core from \.mcp\.json/);
+
+    mkdirSync(path.join(root, '.codex'));
+    rmSync(path.join(root, '.mcp.json'));
+    writeFileSync(
+      path.join(root, '.codex', 'config.toml'),
+      '[mcp_servers.playwright-e2e]\ncommand = "npx"\nargs = ["-y", "playwright-e2e-mcp"]\n[mcp_servers.playwright-e2e.env]\nPW_MCP_TOOLS = "triage"\n',
+    );
+    check = byName(await runDoctorChecks(root, home, { update: { offline: true } }), 'Tools');
+    assert.equal(check.status, 'ok');
+    assert.match(check.detail, /triage from \.codex/);
+
+    // A value in this shell wins, like it does for a server started here.
+    process.env.PW_MCP_TOOLS = 'all';
+    check = byName(await runDoctorChecks(root, home, { update: { offline: true } }), 'Tools');
+    assert.equal(check.status, 'warn');
+  } finally {
+    if (orig !== undefined) process.env.PW_MCP_TOOLS = orig;
+    else delete process.env.PW_MCP_TOOLS;
+    rmSync(root, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('toolsSettingIn finds --tools= and PW_MCP_TOOLS', () => {
+  assert.equal(toolsSettingIn('{"args":["-y","playwright-e2e-mcp","--tools=core,inspect-page"]}'), 'core,inspect-page');
+  assert.equal(toolsSettingIn('{"env":{"PW_MCP_TOOLS":"author"}}'), 'author');
+  assert.equal(toolsSettingIn('PW_MCP_TOOLS = "auto"'), 'auto');
+  assert.equal(toolsSettingIn('{"args":["-y","playwright-e2e-mcp"]}'), undefined);
 });

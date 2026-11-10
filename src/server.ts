@@ -383,7 +383,8 @@ export const TOOL_PROFILES: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * Estimate the token cost of tool definitions (name, description, input schema),
- * characters ÷ 4 as in bench/token-benchmark.mjs.
+ * characters ÷ 4 as in bench/token-benchmark.mjs. The schema is converted with
+ * the target the MCP SDK uses for tools/list, so this matches what clients get.
  */
 export function estimateToolTokens(toolNames?: readonly string[]): number {
   const selected = toolNames ? TOOLS.filter((tool) => toolNames.includes(tool.name)) : TOOLS;
@@ -391,7 +392,7 @@ export function estimateToolTokens(toolNames?: readonly string[]): number {
     const input = looseInput(tool.inputSchema);
     const compact = withCompactJsonSchema(input.schema);
     const std = compact['~standard'] as StandardSchemaWithJSON['~standard'];
-    const inputSchema = std && 'jsonSchema' in std ? (std as { jsonSchema: { input: (opts: { target: string }) => unknown } }).jsonSchema.input({ target: 'openApi3' }) : {};
+    const inputSchema = std && 'jsonSchema' in std ? (std as { jsonSchema: { input: (opts: { target: string }) => unknown } }).jsonSchema.input({ target: 'draft-2020-12' }) : {};
     return {
       name: tool.name,
       description: tool.description,

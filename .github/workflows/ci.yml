@@ -78,6 +78,10 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/py"
           "$RUNNER_TEMP/py/bin/pip" install --quiet pytest-playwright
           "$RUNNER_TEMP/py/bin/playwright" install --with-deps chromium
+      # The server's page tools use its own bundled Playwright, whose browser
+      # build can differ from the one pip's newest playwright just installed.
+      - name: Install Chromium for the server's Playwright version
+        run: npx playwright install chromium
       - name: Run the Python checks against a real pytest-playwright project
         run: node --test test/pytest-runner.test.mjs
         env:

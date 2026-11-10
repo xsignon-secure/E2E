@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { detectProject, findTestFiles } from '../utils/project-detector.js';
-import { SERVER_VERSION, TOOL_PROFILES, estimateToolTokens, resolveToolSelection } from '../server.js';
+import { LAZY_PROFILE, SERVER_VERSION, TOOL_PROFILES, estimateToolTokens, resolveToolSelection } from '../server.js';
 import { SERVER_NAME, SKILL_NAME } from './init.js';
 import { checkForUpdate, UPGRADE_HINT, type UpdateCheckOptions } from '../utils/update-check.js';
 
@@ -151,30 +151,50 @@ export async function versionCheck(options: UpdateCheckOptions = {}): Promise<Do
 }
 
 /**
- * Shows how many tools the current PW_MCP_TOOLS setting exposes and roughly
- * how many tokens they cost the model per request (characters ÷ 4). When all
- * tools are loaded, warns and suggests the core profile.
+ * The tools setting a client config passes to the server: `--tools=<list>` in
+ * its args or PW_MCP_TOOLS in its env (JSON or Codex TOML). Undefined when
+ * the file has neither, so the server lists every tool.
  */
-export function toolsCheck(toolsSpec = process.env.PW_MCP_TOOLS): DoctorCheck {
+export function toolsSettingIn(text: string): string | undefined {
+  const flag = /--tools=([^"'\s]+)/.exec(text);
+  if (flag) return flag[1];
+  const env = /["']?PW_MCP_TOOLS["']?\s*[:=]\s*["']([^"']*)["']/.exec(text);
+  return env ? env[1] : undefined;
+}
+
+/**
+ * Shows how many tools the server would expose and roughly how many tokens
+ * their definitions cost the model per request (characters ÷ 4). The setting
+ * comes from PW_MCP_TOOLS in this shell, else from the first client config
+ * that sets one. When all tools are loaded, warns and suggests a profile.
+ */
+export function toolsCheck(toolsSpec = process.env.PW_MCP_TOOLS, source = 'PW_MCP_TOOLS'): DoctorCheck {
   const resolved = resolveToolSelection(toolsSpec);
   const total = TOOL_PROFILES.all.length;
   const exposed = resolved.tools ?? TOOL_PROFILES.all;
   const count = exposed.length;
   const tokens = estimateToolTokens(exposed);
   const tokenStr = tokens >= 1000 ? `~${(tokens / 1000).toFixed(1)}k` : `~${tokens}`;
+  const from = toolsSpec?.trim() ? `; ${toolsSpec.trim()} from ${source}` : '';
+  const lazy = resolved.lazy ? ' + load-tools' : '';
+  const detail = `${count}/${total} tools${lazy} exposed (${tokenStr} tokens / request${from})`;
+  if (resolved.unknown.length > 0) {
+    return {
+      name: 'Tools',
+      status: 'warn',
+      detail,
+      fix: `Unknown tools or profiles ignored: ${resolved.unknown.join(', ')} (profiles: ${[...Object.keys(TOOL_PROFILES), LAZY_PROFILE].join(', ')})`,
+    };
+  }
   if (count >= total) {
     return {
       name: 'Tools',
       status: 'warn',
-      detail: `${count} tools exposed (${tokenStr} tokens / request)`,
-      fix: 'Pass --tools=core (or set PW_MCP_TOOLS=core) to save tokens',
+      detail,
+      fix: 'Pass --tools=core (or --tools=auto) in your MCP client config to save tokens',
     };
   }
-  return {
-    name: 'Tools',
-    status: 'ok',
-    detail: `${count} tools exposed (${tokenStr} tokens / request)`,
-  };
+  return { name: 'Tools', status: 'ok', detail };
 }
 
 export interface DoctorOptions {
@@ -252,7 +272,22 @@ export async function runDoctorChecks(projectRoot: string, home = os.homedir(), 
       : { name: 'Agent skill', status: 'warn', detail: 'not installed in this project', fix: 'npx -y playwright-e2e-mcp init' },
   );
 
-  checks.push(toolsCheck());
+  // The server reads PW_MCP_TOOLS from its own environment, which the client
+  // config sets; a value in this shell only matters for a server started here.
+  const fromConfig = configured
+    .map(({ file }) => {
+      try {
+        return { file, spec: toolsSettingIn(readFileSync(file, 'utf8')) };
+      } catch {
+        return { file, spec: undefined };
+      }
+    })
+    .find((c) => c.spec !== undefined);
+  checks.push(
+    process.env.PW_MCP_TOOLS || !fromConfig
+      ? toolsCheck()
+      : toolsCheck(fromConfig.spec, path.relative(projectRoot, fromConfig.file) || fromConfig.file),
+  );
 
   return { version: SERVER_VERSION, projectRoot, checks, ok: !checks.some((c) => c.status === 'fail') };
 }
