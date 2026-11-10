@@ -22,7 +22,7 @@ pool:
 
 # Microsoft's Playwright image ships Node and the browsers. Use the tag that
 # matches the @playwright/test version in your package-lock.json.
-container: mcr.microsoft.com/playwright:v1.64.1-noble
+container: mcr.microsoft.com/playwright:v1.65.0-noble
 
 steps:
   - checkout: self
@@ -34,11 +34,11 @@ steps:
   - script: |
       TARGET="${SYSTEM_PULLREQUEST_TARGETBRANCH#refs/heads/}"
       git fetch --quiet origin "$TARGET"
-      npx -y playwright-e2e-mcp guard --base "origin/$TARGET"
+      npx -y playwright-e2e-mcp@0.16.1 guard --base "origin/$TARGET"
     displayName: Heal guard (pull requests)
     condition: eq(variables['Build.Reason'], 'PullRequest')
 
-  - script: npx -y playwright-e2e-mcp ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+  - script: npx -y playwright-e2e-mcp@0.16.1 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
     displayName: Run and diagnose Playwright tests
 
   - publish: e2e-report.md

@@ -17,3 +17,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # The history server's Node base image. The main Dockerfile's Playwright
+  # image is not listed here on purpose: it has to move with playwright-core,
+  # so the npm update for playwright-core fails test/version-pins.test.mjs
+  # until the Dockerfile, the CI templates and the pytest pin move with it.
+  - package-ecosystem: docker
+    directory: /history-server
+    schedule:
+      interval: monthly

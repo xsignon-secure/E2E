@@ -39,7 +39,7 @@ jobs:
           persist-credentials: false
       - name: The tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "$TAG"
-      - run: docker build -t "$IMAGE:${TAG#v}" -t "$IMAGE:latest" .
+      - run: docker build -t "$IMAGE:${TAG#v}" .
       - name: The image reports the package version
         run: test "$(docker run --rm "$IMAGE:${TAG#v}" --version)" = "${TAG#v}"
       - name: The image answers initialize and tools/list over stdio
@@ -71,4 +71,10 @@ jobs:
         run: |
           echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$IMAGE:${TAG#v}"
-          docker push "$IMAGE:latest"
+          # Only the newest stable release moves `latest` (see is-latest-tag.mjs).
+          if [ "$(node scripts/is-latest-tag.mjs "$TAG")" = "true" ]; then
+            docker tag "$IMAGE:${TAG#v}" "$IMAGE:latest"
+            docker push "$IMAGE:latest"
+          else
+            echo "::notice title=docker::$TAG is not the newest release; leaving latest alone."
+          fi

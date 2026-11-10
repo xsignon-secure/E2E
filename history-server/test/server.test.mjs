@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileStore } from '../lib/store.mjs';
@@ -18,6 +18,23 @@ test('fileStore keeps runs across restarts', async () => {
     assert.equal(await second.projectCount('other'), 0);
     assert.equal(await second.deleteProject('web', 'acme/shop'), 2);
     assert.deepEqual(JSON.parse(readFileSync(path.join(dir, 'history.json'), 'utf8')), { web: {}, other: {} });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('fileStore saves again after a failed save', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pw-history-fail-'));
+  const file = path.join(dir, 'history.json');
+  try {
+    const store = await fileStore(dir);
+    // A non-empty directory where history.json goes makes the rename fail.
+    mkdirSync(file);
+    writeFileSync(path.join(file, 'block'), 'x');
+    await assert.rejects(store.addRuns('web', 'acme/shop', [run('2026-10-20T10:00:00.000Z')]));
+    rmSync(file, { recursive: true, force: true });
+    assert.equal(await store.addRuns('web', 'acme/shop', [run('2026-10-21T10:00:00.000Z')]), 1);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).web['acme/shop'].length, 2);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

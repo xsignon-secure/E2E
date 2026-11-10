@@ -48,4 +48,12 @@ jobs:
             echo "::notice title=npm::NPM_TOKEN is not set; skipping npm publish."
             exit 0
           fi
-          npm publish --provenance --access public
+          # Only the newest stable release takes `latest`: two tags pushed at
+          # once, or a patch for an older line, must not move it backwards.
+          VERSION=$(jq -r '.version' package.json)
+          if [ "$(node scripts/is-latest-tag.mjs "v$VERSION")" = "true" ]; then
+            npm publish --provenance --access public
+          else
+            echo "::notice title=npm::v$VERSION is not the newest release; publishing under the 'previous' dist-tag so 'latest' stays put."
+            npm publish --provenance --access public --tag previous
+          fi

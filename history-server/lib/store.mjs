@@ -101,13 +101,19 @@ export async function fileStore(dir) {
     throw new Error(`${file} is not readable JSON: ${error.message}`);
   });
   const memory = memoryStore(initial);
+  // Saves run one at a time. The chain continues past a failed save (a full
+  // disk, say), so once space is back the next upload writes everything again
+  // instead of every later save failing until a restart.
   let queue = Promise.resolve();
-  const save = () =>
-    (queue = queue.then(async () => {
+  const save = () => {
+    const run = queue.then(async () => {
       const tmp = `${file}.${process.pid}.tmp`;
       await writeFile(tmp, JSON.stringify(memory.snapshot()), 'utf8');
       await rename(tmp, file);
-    }));
+    });
+    queue = run.catch(() => undefined);
+    return run;
+  };
   return {
     ...memory,
     async addRuns(team, project, runs) {

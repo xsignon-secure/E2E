@@ -151,12 +151,12 @@ export async function versionCheck(options: UpdateCheckOptions = {}): Promise<Do
 }
 
 /**
- * The tools setting a client config passes to the server: `--tools=<list>` in
- * its args or PW_MCP_TOOLS in its env (JSON or Codex TOML). Undefined when
+ * The tools setting a client config passes to the server: `--tools=<list>`
+ * (or `"--tools", "<list>"` as two args) in its args or PW_MCP_TOOLS in its env (JSON or Codex TOML). Undefined when
  * the file has neither, so the server lists every tool.
  */
 export function toolsSettingIn(text: string): string | undefined {
-  const flag = /--tools=([^"'\s]+)/.exec(text);
+  const flag = /--tools(?:=|["']\s*,\s*["'])([^"'\s\]]+)/.exec(text);
   if (flag) return flag[1];
   const env = /["']?PW_MCP_TOOLS["']?\s*[:=]\s*["']([^"']*)["']/.exec(text);
   return env ? env[1] : undefined;

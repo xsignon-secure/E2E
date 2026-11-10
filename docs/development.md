@@ -163,8 +163,8 @@ job requests for itself; if it is refused, the run names the setting to change.
 ## Verifying a published release
 
 ```bash
-git checkout v0.16.0 && npm ci && npm run mcpb
-npm run release:verify -- v0.16.0
+git checkout v0.16.1 && npm ci && npm run mcpb
+npm run release:verify -- v0.16.1
 ```
 
 The release notes promise that the tag rebuilds the published bundle byte for
@@ -262,6 +262,6 @@ docker run --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp ci    
 docker build -t playwright-e2e-mcp .                                               # or build it yourself
 ```
 
-The image is based on `mcr.microsoft.com/playwright:v1.64.1-noble`, so its
+The image is based on `mcr.microsoft.com/playwright:v1.65.0-noble`, so its
 browsers match Playwright 1.64. Mount your project at `/work`; its own
 `node_modules` provide `@playwright/test`.

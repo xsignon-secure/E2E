@@ -139,12 +139,43 @@ async function getJson<T>(url: string, header: Record<string, string>, signal?: 
   return (await response.json()) as T;
 }
 
-async function getBytes(url: string, header: Record<string, string>, signal?: AbortSignal): Promise<Buffer> {
+async function getBytes(url: string, header: Record<string, string>, signal?: AbortSignal, max = MAX_DOWNLOAD_BYTES): Promise<Buffer> {
   const response = await request(url, header, signal);
   if (!response.ok) throw new PlaywrightMcpError(`Artifact download answered ${response.status}`, 'REPORT_MISSING');
-  const size = Number(response.headers.get('content-length') ?? 0);
-  if (size > MAX_DOWNLOAD_BYTES) throw new PlaywrightMcpError(`Artifact is too large (${Math.round(size / 1_000_000)} MB)`, 'REPORT_MISSING');
-  return Buffer.from(await response.arrayBuffer());
+  return readCapped(response, max, signal);
+}
+
+/**
+ * Read a response body, refusing more than `max` bytes. Content-Length is
+ * checked first, but a chunked or lying response has none, so the stream is
+ * counted too and cancelled the moment it passes the cap.
+ */
+export async function readCapped(response: Response, max: number, signal?: AbortSignal): Promise<Buffer> {
+  const tooLarge = (bytes: number) => new PlaywrightMcpError(`Artifact is too large (over ${Math.round(bytes / 1_000_000)} MB)`, 'REPORT_MISSING');
+  const declared = Number(response.headers.get('content-length') ?? 0);
+  if (declared > max) {
+    await response.body?.cancel().catch(() => undefined);
+    throw tooLarge(declared);
+  }
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    if (signal?.aborted) {
+      await reader.cancel().catch(() => undefined);
+      throw new PlaywrightMcpError('Artifact download was cancelled', 'REPORT_MISSING');
+    }
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge(max);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
 }
 
 /** Unpack a zip under `dest`, refusing entries that would land outside it. Returns files written. */
@@ -187,13 +218,15 @@ export async function fetchCiRun(ref: CiRunRef, root: string, signal?: AbortSign
     const wanted = live.filter((a) => WANTED.test(a.name));
     const picked = (wanted.length > 0 ? wanted : live).slice(0, MAX_ARTIFACTS);
     const dir = normalizePath(path.join(toNativePath(root), HISTORY_DIR, 'ci', `github-${ref.runId}`));
+    // One budget for every artifact, counted from the bytes actually read:
+    // the listed size_in_bytes is only used to skip what cannot fit.
     let total = 0;
     for (const artifact of picked) {
-      total += artifact.size_in_bytes ?? 0;
-      if (total > MAX_DOWNLOAD_BYTES) break;
+      if (total + (artifact.size_in_bytes ?? 0) > MAX_DOWNLOAD_BYTES) break;
       // The token only ever goes to the trusted API origin, never to storage.
       const sameHost = new URL(artifact.archive_download_url).origin === new URL(ref.api).origin;
-      const zip = await getBytes(artifact.archive_download_url, sameHost ? header : {}, signal);
+      const zip = await getBytes(artifact.archive_download_url, sameHost ? header : {}, signal, MAX_DOWNLOAD_BYTES - total);
+      total += zip.length;
       await unzipInto(zip, `${dir}/${artifact.name.replace(/[^\w.-]+/g, '_')}`);
     }
     return { dir, artifacts: picked.map((a) => a.name), commit: run.head_sha, branch: run.head_branch, url: run.html_url ?? `https://github.com/${ref.owner}/${ref.repo}/actions/runs/${ref.runId}` };

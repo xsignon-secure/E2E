@@ -218,8 +218,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.16.0` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.16.0/playwright-e2e-mcp-0.16.0.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.16.1` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.16.1/playwright-e2e-mcp-0.16.1.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -448,7 +448,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.16.0
+  - uses: xsignon-secure/E2E@v0.16.1
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -563,7 +563,7 @@ pip install pytest-playwright && playwright install chromium
 | `PW_MCP_OAUTH_REDIRECT_HOSTS` | any https host | HTTP bridge only: comma-separated hosts OAuth apps may return to, e.g. `claude.ai,chatgpt.com`; `.example.com` covers subdomains; localhost always works |
 | `PW_MCP_OAUTH_CIMD` | `1` | HTTP bridge only: accept OAuth clients that identify with a Client ID Metadata Document (an https `client_id`, the MCP default since 2025-11-25); `0` accepts only dynamically registered clients |
 | `PW_MCP_TRUST_PROXY` | off (on for Vercel) | HTTP bridge only, so the sign-in limit counts per client, not per proxy. `1` (or `N` for N proxies in a row) reads the address the nearest proxy appended to `X-Forwarded-For`, counted from the right, so a client cannot forge it. `x-real-ip` reads `X-Real-IP` instead, for a proxy that overwrites that header (nginx `proxy_set_header X-Real-IP $remote_addr`) and does not append to `X-Forwarded-For` |
-| `PW_MCP_PASSTHROUGH_ENV` | — | HTTP bridge only: comma-separated extra variables passed to test runs (e.g. `BASE_URL`) |
+| `PW_MCP_PASSTHROUGH_ENV` | — | Comma-separated extra variables passed to test runs: on the HTTP bridge (e.g. `BASE_URL`), and in `playwright-e2e-mcp ci`, which otherwise keeps `GITHUB_TOKEN` / `GH_TOKEN` away from your tests |
 | `PW_MCP_MAX_CHILDREN` | `4` | HTTP bridge only: how many test runs and browser probes may run at once |
 | `PW_MCP_BLOCK_PRIVATE_URLS` | off (on for the HTTP bridge) | `1` makes the URL tools refuse loopback, private-network and cloud-metadata addresses, including redirects and subresources |
 | `PW_MCP_SERVERLESS_CHROMIUM` | on for Vercel | Launch the page tools on the bundled serverless Chromium (`@sparticuz/chromium`, Linux x64, Node 22+); `0` turns it off, `1` turns it on elsewhere |
@@ -636,6 +636,10 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.16.1:** security and release fixes from an audit: `playwright-e2e-mcp ci` keeps
+  `GITHUB_TOKEN` / `GH_TOKEN` away from your tests, CI artifact downloads are capped by the bytes
+  read, `--tools core` (two args) works, only the newest release takes npm and Docker `latest`,
+  Playwright 1.65.0.
 - **0.16:** `doctor` shows how many tools your client config loads and what their definitions
   cost in tokens per request, and suggests `--tools=core` or `--tools=auto` when all are loaded.
 - **0.15:** pytest-playwright suites get `diagnose-flaky` (with pytest-xdist for `isolate`),
