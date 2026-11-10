@@ -22,7 +22,7 @@ pool:
 
 # Microsoft's Playwright image ships Node and the browsers. Use the tag that
 # matches the @playwright/test version in your package-lock.json.
-container: mcr.microsoft.com/playwright:v1.64.1-noble
+container: mcr.microsoft.com/playwright:v1.65.0-noble
 
 steps:
   - checkout: self

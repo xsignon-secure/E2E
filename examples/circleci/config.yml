@@ -17,7 +17,7 @@ jobs:
     docker:
       # Ships Node and the browsers. Match the @playwright/test version in
       # your package-lock.json.
-      - image: mcr.microsoft.com/playwright:v1.64.1-noble
+      - image: mcr.microsoft.com/playwright:v1.65.0-noble
     environment:
       BASE_BRANCH: main
     steps:

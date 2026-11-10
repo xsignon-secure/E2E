@@ -168,3 +168,9 @@ test('toolsSettingIn finds --tools= and PW_MCP_TOOLS', () => {
   assert.equal(toolsSettingIn('PW_MCP_TOOLS = "auto"'), 'auto');
   assert.equal(toolsSettingIn('{"args":["-y","playwright-e2e-mcp"]}'), undefined);
 });
+
+test('toolsSettingIn finds --tools written as two args (JSON and TOML)', () => {
+  assert.equal(toolsSettingIn('{"args":["-y","playwright-e2e-mcp","--tools","core,inspect-page"]}'), 'core,inspect-page');
+  assert.equal(toolsSettingIn('{"args": ["-y", "playwright-e2e-mcp", "--tools", "triage"]}'), 'triage');
+  assert.equal(toolsSettingIn("args = ['-y', 'playwright-e2e-mcp', '--tools', 'auto']"), 'auto');
+});

@@ -194,6 +194,17 @@ test('--tools=auto lists core + load-tools, and load-tools turns on a profile wi
   }
 });
 
+test('--tools core (two args, as client configs often write it) is honoured too', async () => {
+  const client = stdioClient(['--tools', 'core']);
+  try {
+    await client.init();
+    const listed = (await client.request('tools/list', {})).result.tools.map((tool) => tool.name);
+    assert.deepEqual(new Set(listed), new Set(TOOL_PROFILES.core));
+  } finally {
+    client.close();
+  }
+});
+
 test('the HTTP bridge lists every tool for PW_MCP_TOOLS=auto (it cannot keep loaded tools)', async () => {
   const previous = process.env.PW_MCP_TOOLS;
   process.env.PW_MCP_TOOLS = 'auto';

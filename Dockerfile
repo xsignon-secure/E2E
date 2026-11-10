@@ -10,14 +10,14 @@
 # Mount the Playwright project at /work (the default project root). Its own
 # node_modules provide @playwright/test for run-test; the browsers in this
 # image serve inspect-page, validate-selector and compare-visual-state.
-FROM mcr.microsoft.com/playwright:v1.64.1-noble AS build
+FROM mcr.microsoft.com/playwright:v1.65.0-noble AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 RUN npm ci --ignore-scripts
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM mcr.microsoft.com/playwright:v1.64.1-noble
+FROM mcr.microsoft.com/playwright:v1.65.0-noble
 LABEL org.opencontainers.image.source="https://github.com/xsignon-secure/E2E" \
       org.opencontainers.image.description="MCP server that runs, diagnoses and fixes failing Playwright tests" \
       org.opencontainers.image.licenses="MIT"

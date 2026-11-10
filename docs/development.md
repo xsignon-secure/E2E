@@ -262,6 +262,6 @@ docker run --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp ci    
 docker build -t playwright-e2e-mcp .                                               # or build it yourself
 ```
 
-The image is based on `mcr.microsoft.com/playwright:v1.64.1-noble`, so its
+The image is based on `mcr.microsoft.com/playwright:v1.65.0-noble`, so its
 browsers match Playwright 1.64. Mount your project at `/work`; its own
 `node_modules` provide `@playwright/test`.

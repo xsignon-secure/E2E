@@ -19,8 +19,8 @@ playwright-e2e:
   stage: test
   # Microsoft's Playwright image ships Node and the browsers. Use the tag that
   # matches the @playwright/test version in your package-lock.json (the
-  # browsers are tied to it), e.g. v1.64.1-noble for 1.64.1.
-  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  # browsers are tied to it), e.g. v1.65.0-noble for 1.65.0.
+  image: mcr.microsoft.com/playwright:v1.65.0-noble
   variables:
     # The guard compares with the target branch, so it needs real history.
     GIT_DEPTH: "0"

@@ -127,8 +127,14 @@ async function main(): Promise<void> {
     return;
   }
 
-  const toolsFlag = process.argv.find((arg) => arg.startsWith('--tools='));
-  if (toolsFlag) process.env.PW_MCP_TOOLS = toolsFlag.slice('--tools='.length);
+  // `--tools=core` and `--tools core` (two args, as many client configs
+  // write them) both work; the second form used to be ignored silently.
+  const toolsAt = process.argv.findIndex((arg) => arg === '--tools' || arg.startsWith('--tools='));
+  if (toolsAt >= 0) {
+    const arg = process.argv[toolsAt];
+    const value = arg === '--tools' ? process.argv[toolsAt + 1] : arg.slice('--tools='.length);
+    if (value !== undefined && !value.startsWith('--')) process.env.PW_MCP_TOOLS = value;
+  }
 
   const { startServer } = await import('./server.js');
   await startServer();

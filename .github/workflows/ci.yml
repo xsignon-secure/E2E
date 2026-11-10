@@ -79,7 +79,7 @@ jobs:
           # Pinned: an unpinned install pulled a newer Python playwright and
           # broke this job on main. Keep playwright on the same version as the
           # server's playwright-core (test/version-pins.test.mjs checks it).
-          "$RUNNER_TEMP/py/bin/pip" install --quiet pytest-playwright==0.10.0 playwright==1.64.1
+          "$RUNNER_TEMP/py/bin/pip" install --quiet pytest-playwright==0.10.0 playwright==1.65.0
           "$RUNNER_TEMP/py/bin/playwright" install --with-deps chromium
       # The server's page tools use its own bundled Playwright, whose browser
       # build can differ from the one pip's newest playwright just installed.
