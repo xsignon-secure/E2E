@@ -87,45 +87,108 @@ export function memoryStore(initial) {
 }
 
 /**
- * One JSON file on disk, for a single server (a VM, a container, a spare
- * machine). Writes go to a temp file and are renamed into place, so a crash
- * mid-write never leaves a half-written history.
+ * Files on disk, for a single server (a VM, a container, a spare machine).
+ *
+ * `history.json` is a snapshot; every upload or delete after it is appended
+ * as one line to `history.jsonl`, so an upload writes only its own runs
+ * instead of the whole history. On start, and once the journal passes
+ * COMPACT_BYTES or COMPACT_LINES, the snapshot is rewritten (temp file +
+ * rename, so a crash never leaves half a file) and the journal emptied.
+ * Replaying a journal line twice is harmless: runs are keyed, so a crash
+ * between the rename and the truncate loses nothing and duplicates nothing.
+ * A torn last line (a crash mid-append) is skipped.
  */
-export async function fileStore(dir) {
-  const { mkdir, readFile, rename, writeFile } = await import('node:fs/promises');
+export const COMPACT_BYTES = 32 * 1024 * 1024;
+export const COMPACT_LINES = 2_000;
+
+export async function fileStore(dir, { compactBytes = COMPACT_BYTES, compactLines = COMPACT_LINES } = {}) {
+  const { appendFile, mkdir, readFile, rename, writeFile } = await import('node:fs/promises');
   const path = await import('node:path');
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, 'history.json');
+  const journal = path.join(dir, 'history.jsonl');
   const initial = await readFile(file, 'utf8').then(JSON.parse).catch((error) => {
     if (error.code === 'ENOENT') return {};
     throw new Error(`${file} is not readable JSON: ${error.message}`);
   });
   const memory = memoryStore(initial);
-  // Saves run one at a time. The chain continues past a failed save (a full
-  // disk, say), so once space is back the next upload writes everything again
-  // instead of every later save failing until a restart.
+
+  const pending = await readFile(journal, 'utf8').catch((error) => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  });
+  let replayed = 0;
+  for (const line of pending.split('\n')) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue; // a torn line from a crash mid-append
+    }
+    if (entry.op === 'add' && Array.isArray(entry.runs)) await memory.addRuns(entry.team, entry.project, entry.runs);
+    else if (entry.op === 'delete') await memory.deleteProject(entry.team, entry.project);
+    replayed += 1;
+  }
+
+  let journalBytes = Buffer.byteLength(pending);
+  let journalLines = replayed;
+
+  // Writes run one at a time. The chain continues past a failed write (a full
+  // disk, say), so once space is back the next upload saves again instead of
+  // every later write failing until a restart.
   let queue = Promise.resolve();
-  const save = () => {
-    const run = queue.then(async () => {
-      const tmp = `${file}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(memory.snapshot()), 'utf8');
-      await rename(tmp, file);
-    });
+  const serial = (task) => {
+    const run = queue.then(task);
     queue = run.catch(() => undefined);
     return run;
   };
+  const compact = async () => {
+    const tmp = `${file}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(memory.snapshot()), 'utf8');
+    await rename(tmp, file);
+    await writeFile(journal, '', 'utf8');
+    journalBytes = 0;
+    journalLines = 0;
+  };
+  // After a failed write, memory holds entries the disk does not: the next
+  // write is a full compaction, which saves them all.
+  let behind = false;
+  const record = (entry) =>
+    serial(async () => {
+      try {
+        if (behind || (journalLines > 0 && (journalBytes >= compactBytes || journalLines >= compactLines))) {
+          // The entry is already applied in memory, so the snapshot includes it.
+          await compact();
+        } else {
+          const line = `${JSON.stringify(entry)}\n`;
+          await appendFile(journal, line, 'utf8');
+          journalBytes += Buffer.byteLength(line);
+          journalLines += 1;
+        }
+        behind = false;
+      } catch (error) {
+        behind = true;
+        throw error;
+      }
+    });
+
+  if (pending.length > 0) await serial(compact);
+
   return {
     ...memory,
     async addRuns(team, project, runs) {
       const stored = await memory.addRuns(team, project, runs);
-      await save();
+      if (stored > 0) await record({ op: 'add', team, project, runs });
       return stored;
     },
     async deleteProject(team, project) {
       const deleted = await memory.deleteProject(team, project);
-      await save();
+      await record({ op: 'delete', team, project });
       return deleted;
     },
+    /** Rewrite the snapshot and empty the journal now (tests, shutdown). */
+    compact: () => serial(compact),
   };
 }
 

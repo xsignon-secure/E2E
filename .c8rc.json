@@ -1,0 +1,29 @@
+{
+  "all": true,
+  "src": [
+    "src"
+  ],
+  "include": [
+    "src/**",
+    "dist/**"
+  ],
+  "exclude": [
+    "test/**",
+    "e2e/**",
+    "scripts/**",
+    "bench/**",
+    "history-server/**",
+    "**/*.d.ts"
+  ],
+  "exclude-after-remap": true,
+  "reporter": [
+    "text-summary",
+    "text"
+  ],
+  "report-dir": "coverage",
+  "check-coverage": true,
+  "lines": 60,
+  "statements": 60,
+  "branches": 72,
+  "functions": 47
+}

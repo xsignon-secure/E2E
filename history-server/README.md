@@ -41,7 +41,10 @@ docker run -d --name pw-history -p 8787:8787 \
   -e HISTORY_TOKENS="web:<token>" -v pw-history:/data pw-history
 ```
 
-**Plain Node 22.** Runs are kept in `HISTORY_DATA_DIR/history.json`:
+**Plain Node 22.** Runs are kept in `HISTORY_DATA_DIR`: each upload is appended to
+`history.jsonl`, which is folded into the `history.json` snapshot on start and every 2,000
+uploads or 32 MB. The whole history is held in memory, so for many teams or projects near the
+limits below, use Postgres (`DATABASE_URL`) instead.
 
 ```bash
 cd history-server && npm ci --omit=dev
@@ -96,7 +99,7 @@ this server too.
 | --- | --- | --- |
 | `HISTORY_TOKENS` | required | `team:token` pairs or bare tokens, comma separated; 16+ characters each |
 | `DATABASE_URL` | — | Postgres connection string (serverless hosts) |
-| `HISTORY_DATA_DIR` | — | Folder for `history.json` (single server, Docker sets `/data`) |
+| `HISTORY_DATA_DIR` | — | Folder for `history.json` and its `history.jsonl` journal (single server, Docker sets `/data`) |
 | `HISTORY_MAX_PROJECTS` | 20 | Projects per team |
 | `HISTORY_MAX_RUNS` | 5000 | Runs kept per project; the oldest go first |
 | `HISTORY_RETENTION_DAYS` | 90 | Runs older than this are dropped |
