@@ -92,6 +92,8 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "tmp": "^0.2.6"
+    "tmp": "^0.2.6",
+    "minimatch": "^11.0.8",
+    "glob": "^14.0.4"
   }
 }
