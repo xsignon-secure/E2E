@@ -41,11 +41,11 @@ playwright-e2e:
     - |
       if [ -n "$CI_MERGE_REQUEST_IID" ]; then
         git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
-        npx -y playwright-e2e-mcp@0.16.1 guard --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        npx -y playwright-e2e-mcp@0.16.2 guard --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
       fi
     # 2. Run and diagnose the suite. --verify-fixes re-runs each failing test
     #    with its drafted fix applied, then restores the file.
-    - npx -y playwright-e2e-mcp@0.16.1 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+    - npx -y playwright-e2e-mcp@0.16.2 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
   after_script:
     # 3. Post the report on the merge request. E2E_REPORT_TOKEN is a project
     #    access token with the `api` scope, stored as a masked CI/CD variable.

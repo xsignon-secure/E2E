@@ -28,9 +28,9 @@ phases:
           BASE="${CODEBUILD_WEBHOOK_BASE_REF#refs/heads/}"
           git fetch --quiet --unshallow origin 2>/dev/null || true
           git fetch --quiet origin "$BASE"
-          npx -y playwright-e2e-mcp@0.16.1 guard --base "origin/$BASE"
+          npx -y playwright-e2e-mcp@0.16.2 guard --base "origin/$BASE"
         fi
-      - npx -y playwright-e2e-mcp@0.16.1 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+      - npx -y playwright-e2e-mcp@0.16.2 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
 
 artifacts:
   files:
