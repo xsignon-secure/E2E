@@ -189,8 +189,20 @@ Or paste the standard config into `.gemini/settings.json` (Qwen Code: `.qwen/set
 <details>
 <summary><b>Windsurf, Cline, Zed, Freebuff and other clients</b></summary>
 
-Add the standard config to the client's MCP config file (Cline: *MCP Servers → Configure*).
-Clients that take a command, such as Zed, run `npx` with the arguments `-y playwright-e2e-mcp`.
+Add the standard config to the client's MCP config file:
+
+- **Windsurf**: `~/.codeium/windsurf/mcp_config.json`
+  ```json
+  { "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }
+  ```
+- **Cline**: *MCP Servers → Configure* opens `cline_mcp_settings.json`
+  ```json
+  { "mcpServers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }
+  ```
+- **Zed**: `~/.config/zed/settings.json` (Zed calls MCP servers context servers)
+  ```json
+  { "context_servers": { "playwright-e2e": { "command": "npx", "args": ["-y", "playwright-e2e-mcp"] } } }
+  ```
 
 Freebuff / Codebuff: drop an `mcp.json` with the standard config into your project's `.agents/`
 folder. This repo ships one in [`.agents/mcp.json`](.agents/mcp.json); Freebuff asks you to trust
