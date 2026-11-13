@@ -28,9 +28,9 @@ definitions:
           - |
             if [ -n "$BITBUCKET_PR_DESTINATION_BRANCH" ]; then
               git fetch --quiet origin "$BITBUCKET_PR_DESTINATION_BRANCH"
-              npx -y playwright-e2e-mcp@0.16.1 guard --base "origin/$BITBUCKET_PR_DESTINATION_BRANCH"
+              npx -y playwright-e2e-mcp@0.16.2 guard --base "origin/$BITBUCKET_PR_DESTINATION_BRANCH"
             fi
-          - npx -y playwright-e2e-mcp@0.16.1 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
+          - npx -y playwright-e2e-mcp@0.16.2 ci --flaky-runs 3 --suggest 2 --verify-fixes --output e2e-report.md
         artifacts:
           - e2e-report.md
           - playwright-report/**

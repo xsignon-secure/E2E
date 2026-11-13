@@ -230,8 +230,8 @@ use the local install for that.
 | Skill only, any agent | `npx skills add xsignon-secure/E2E` |
 | MCP Registry | `io.github.xsignon-secure/E2E` ([listing](https://registry.modelcontextprotocol.io/)); registry-aware clients find it there |
 | Docker | `docker run -i --rm -v "$PWD:/work" ghcr.io/xsignon-secure/playwright-e2e-mcp` (published on each release; see [Development](docs/development.md#docker)) |
-| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.16.1` (pin a release tag) |
-| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.16.1/playwright-e2e-mcp-0.16.1.tgz` |
+| Straight from GitHub, no npm | `npx -y github:xsignon-secure/E2E#v0.16.2` (pin a release tag) |
+| Release tarball | `npm install -D https://github.com/xsignon-secure/E2E/releases/download/v0.16.2/playwright-e2e-mcp-0.16.2.tgz` |
 | Local checkout | `"command": "node", "args": ["/path/to/E2E/dist/index.js"]` |
 
 </details>
@@ -460,7 +460,7 @@ steps:
   - uses: actions/setup-node@v6
     with: { node-version: 24 }
   - run: npm ci && npx playwright install --with-deps chromium
-  - uses: xsignon-secure/E2E@v0.16.1
+  - uses: xsignon-secure/E2E@v0.16.2
     with:
       flaky-runs: 3      # 0 skips the flaky verdict
       suggest: 2         # suggest-fix diffs for the first 2 failures
@@ -648,6 +648,9 @@ a test.
 
 ## 🆕 Recent releases
 
+- **0.16.2:** the self-hosted history server appends each upload to a journal instead of
+  rewriting the whole file, the history server image moves to Node 26, per-client setup for
+  Windsurf, Cline and Zed, and dev-only dependency security fixes.
 - **0.16.1:** security and release fixes from an audit: `playwright-e2e-mcp ci` keeps
   `GITHUB_TOKEN` / `GH_TOKEN` away from your tests, CI artifact downloads are capped by the bytes
   read, `--tools core` (two args) works, only the newest release takes npm and Docker `latest`,

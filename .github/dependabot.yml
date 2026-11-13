@@ -8,6 +8,12 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    # minimatch and glob come in only under c8 (coverage, dev-only) and are
+    # forced to the fixed lines by "overrides" in package.json. Dependabot's
+    # security update cannot move them inside c8's range and fails every run.
+    ignore:
+      - dependency-name: minimatch
+      - dependency-name: glob
   - package-ecosystem: npm
     directory: /history-server
     schedule:
