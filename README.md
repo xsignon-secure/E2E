@@ -21,6 +21,8 @@ Your Playwright test fails. Your AI finds out why, fixes it, and <b>proves the f
   <img src="https://raw.githubusercontent.com/xsignon-secure/E2E/main/docs/demo.gif" alt="An agent runs the failing checkout test, suggest-fix proposes a locator proven on the page at failure, and the applied fix is re-run and verified green" width="760">
 </p>
 
+> 🟢 **Want the whole job done for you?** [**KeepGreen**](https://github.com/xsignon-secure/keepgreen) is the free AI test agent built on this server. It writes new Playwright tests for the flows nobody tested and fixes the ones that break, in your own GitHub Actions with your own AI key. Start with `npx keepgreen init`.
+
 <p align="center">⭐ <b>If it saves you a debugging session, <a href="https://github.com/xsignon-secure/E2E">a star</a> helps other Playwright users find it.</b></p>
 
 <p align="center">
